@@ -1,6 +1,6 @@
 # Epic 22 — Celery & Async Tasks — AI Coding Prompts
 
-Repo: `tablogenix-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
+Repo: `chiz-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
 
 **How to use this document:** same as prior epics — each task is a standalone prompt, feed one at a time in order, commit/review before the next. This is a small epic (4 tasks) but an unusually high-stakes one: **a large number of tasks across prior epics in this series were explicitly written assuming Celery infrastructure already exists**, with each one carrying a caveat like *"confirm Celery/django-celery-beat is actually set up before starting; if not, this task depends on Epic 22 Phase 22.1 landing first."* This epic is where every one of those deferred assumptions finally gets a real foundation.
 
@@ -109,7 +109,7 @@ REQUIREMENTS
 
   os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings.development")
 
-  app = Celery("tablogenix")
+  app = Celery("chiz")
   app.config_from_object("django.conf:settings", namespace="CELERY")
   app.autodiscover_tasks()
 

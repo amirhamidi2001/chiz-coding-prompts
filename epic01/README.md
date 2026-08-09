@@ -1,6 +1,6 @@
 # Epic 1 — Core Backend Stability — AI Coding Prompts
 
-Repo: `tablogenix-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
+Repo: `chiz-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
 
 **How to use this document:** each task below is a complete, standalone prompt you can hand directly to a coding agent (Claude Code, Cursor, etc.) working inside the repo. Run them **in order** — later tasks assume earlier ones in the same Feature (and, where noted, earlier Features) are already merged. Each prompt is scoped to one sitting (30 min–2 hrs) and includes the current relevant code so the agent doesn't need to guess at context, exact file paths to touch, hard requirements, edge cases to handle, and the acceptance criteria/tests that define "done."
 

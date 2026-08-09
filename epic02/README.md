@@ -1,6 +1,6 @@
 # Epic 2 — Authentication & Authorization (Iran-Market OTP) — AI Coding Prompts
 
-Repo: `tablogenix-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
+Repo: `chiz-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
 
 **How to use this document:** same as Epic 1 — each task is a standalone prompt, feed them one at a time in order, let each be committed/reviewed before starting the next. Tasks within a Feature must run in the printed order; Features across Phases mostly run in order too (called out explicitly wherever a task can safely run in parallel with another Phase).
 

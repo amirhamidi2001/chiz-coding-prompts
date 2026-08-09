@@ -1,6 +1,6 @@
 # Epic 21 — Caching (Redis) — AI Coding Prompts
 
-Repo: `tablogenix-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
+Repo: `chiz-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
 
 **How to use this document:** same as prior epics — each task is a standalone prompt, feed one at a time in order, commit/review before the next.
 
@@ -107,7 +107,7 @@ REQUIREMENTS
           "OPTIONS": {
               "CLIENT_CLASS": "django_redis.client.DefaultClient",
           },
-          "KEY_PREFIX": "tablogenix",  # namespace cache keys, in case this Redis instance is ever shared with another project/environment
+          "KEY_PREFIX": "chiz",  # namespace cache keys, in case this Redis instance is ever shared with another project/environment
           "TIMEOUT": 300,  # sensible default TTL (5 min) for any cache.set() call that doesn't specify its own explicit timeout
       }
   }
@@ -418,7 +418,7 @@ REQUIREMENTS
   def invalidate_cache_on_variant_save(sender, **kwargs):
       invalidate_product_list_cache()
   ```
-  Note the KEY_PREFIX (`"tablogenix"`, established in Task 21.1.1.1's
+  Note the KEY_PREFIX (`"chiz"`, established in Task 21.1.1.1's
   `CACHES` config) is automatically prepended by `django-redis` to
   every cache key — confirm the actual, real prefixed key format by
   inspecting Redis directly (`redis-cli KEYS "*"` against the cache DB)
@@ -552,14 +552,14 @@ REQUIREMENTS
           "BACKEND": "django_redis.cache.RedisCache",
           "LOCATION": f"redis://{config('REDIS_HOST', default='127.0.0.1')}:{config('REDIS_PORT', default=6379)}/{REDIS_DB_CACHE}",
           "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
-          "KEY_PREFIX": "tablogenix",
+          "KEY_PREFIX": "chiz",
           "TIMEOUT": 300,
       },
       "sessions": {
           "BACKEND": "django_redis.cache.RedisCache",
           "LOCATION": f"redis://{config('REDIS_HOST', default='127.0.0.1')}:{config('REDIS_PORT', default=6379)}/{REDIS_DB_SESSIONS}",
           "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
-          "KEY_PREFIX": "tablogenix_session",
+          "KEY_PREFIX": "chiz_session",
           # No blanket TIMEOUT override here — session expiry is
           # governed by SESSION_COOKIE_AGE below, not this cache
           # backend's generic default timeout.

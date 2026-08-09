@@ -1,6 +1,6 @@
 # Epic 6 — Payments (Iranian Gateways) — AI Coding Prompts
 
-Repo: `tablogenix-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
+Repo: `chiz-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
 
 **How to use this document:** same as prior epics — each task is a standalone prompt, feed one at a time in order, commit/review before the next. This epic closes the single biggest "this isn't a real store yet" gap identified in the original architecture review: there is currently **zero real payment processing** anywhere in this codebase — checkout collects a fake card number, stores only its last 4 digits, and creates the order immediately with no actual money changing hands.
 

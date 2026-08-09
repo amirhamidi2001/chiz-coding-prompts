@@ -1,6 +1,6 @@
 # Epic 13 — Recommendation Engine — AI Coding Prompts
 
-Repo: `tablogenix-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
+Repo: `chiz-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
 
 **How to use this document:** same as prior epics — each task is a standalone prompt, feed one at a time in order, commit/review before the next.
 
@@ -172,7 +172,7 @@ than a half-built hybrid:
 **Option A — Frontend-only (localStorage), simpler, works for guests:**
 - Maintain a capped list (e.g. last 20) of `{productId, slug, name,
   thumbnail, price, viewedAt}` in `localStorage` under a dedicated key
-  (e.g. `tablogenix_recently_viewed`).
+  (e.g. `chiz_recently_viewed`).
 - On the product detail page mount, push the current product to the
   front of this list (de-duplicating if already present — move it to
   front rather than adding a second entry), trim to the cap, and
@@ -219,7 +219,7 @@ indicates the device-local limitation is actually costing conversions
 REQUIREMENTS (implementing Option A)
 - `frontend/src/utils/recentlyViewed.js`:
   ```javascript
-  const STORAGE_KEY = 'tablogenix_recently_viewed';
+  const STORAGE_KEY = 'chiz_recently_viewed';
   const MAX_ITEMS = 20;
 
   export function addRecentlyViewed(product) {

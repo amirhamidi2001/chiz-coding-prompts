@@ -1,6 +1,6 @@
 # Epic 3 — Product Catalog & Cosmetics Data Model — AI Coding Prompts
 
-Repo: `tablogenix-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
+Repo: `chiz-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
 
 **How to use this document:** same as Epics 1 and 2 — each task is a standalone prompt, feed them one at a time in order, let each be committed/reviewed before starting the next. This is the largest and most structurally invasive epic in the backlog: it changes what "a product" even means in the data model (single stock/price → variants), so tasks within Feature 3.1.1 in particular MUST run in the exact order given — nothing later in the project can safely touch cart/order/stock logic until the variant migration is fully complete and verified.
 

@@ -1,6 +1,6 @@
 # Epic 29 — Frontend Architecture Refactor — AI Coding Prompts
 
-Repo: `tablogenix-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
+Repo: `chiz-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
 
 **How to use this document:** same as prior epics — each task is a standalone prompt, feed one at a time in order, commit/review before the next. This epic directly closes out the ORIGINAL architecture review's frontend findings from the very start of this whole project — "no code-splitting," "no data-fetching/caching library," "no form library" — none of which were addressed incidentally by any epic in between; they're still exactly as they were on day one.
 

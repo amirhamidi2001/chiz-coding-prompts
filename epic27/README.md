@@ -1,6 +1,6 @@
 # Epic 27 — Analytics — AI Coding Prompts
 
-Repo: `tablogenix-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
+Repo: `chiz-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
 
 **How to use this document:** same as prior epics — each task is a standalone prompt, feed one at a time in order, commit/review before the next.
 
@@ -54,7 +54,7 @@ project:
 TASK
 Make a deliberate, documented choice and implement it. RECOMMEND
 **self-hosted Plausible** for this project specifically: it directly
-sidesteps the GA4 reliability risk (traffic to `analytics.tablogenix.com`
+sidesteps the GA4 reliability risk (traffic to `analytics.chiz.com`
 or a subpath of the platform's own domain is far less likely to be
 selectively restricted than traffic to `google-analytics.com`), its
 privacy-by-design approach means no cookie-consent-banner requirement
@@ -83,7 +83,7 @@ if a different tool was chosen)
   genuinely separate, don't try to share this project's own `db`
   service with Plausible's internal storage needs).
   Expose it at a dedicated subdomain/path (e.g.
-  `analytics.tablogenix.com` or `tablogenix.com/analytics-proxy/` —
+  `analytics.chiz.com` or `chiz.com/analytics-proxy/` —
   a PATH-based approach on the SAME domain as the main site, proxied
   through the existing nginx service, has a genuine additional benefit
   worth considering: some ad/tracker-blocking browser extensions
@@ -99,7 +99,7 @@ if a different tool was chosen)
   static `<script>` tag in `index.html` is likely sufficient and
   simpler for a single-page-app-wide tracking need like this):
   ```html
-  <script defer data-domain="tablogenix.com" src="https://analytics.tablogenix.com/js/script.js"></script>
+  <script defer data-domain="chiz.com" src="https://analytics.chiz.com/js/script.js"></script>
   ```
   (adjust the exact domain/script path to match whatever hosting
   decision was made above).

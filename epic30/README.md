@@ -1,6 +1,6 @@
 # Epic 30 — Documentation — AI Coding Prompts
 
-Repo: `tablogenix-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
+Repo: `chiz-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
 
 **How to use this document:** same as prior epics — each task is a standalone prompt, feed one at a time in order, commit/review before the next. This is the **final epic** in the master backlog's 30-epic sequence.
 
@@ -8,7 +8,7 @@ Repo: `tablogenix-ecommerce-main` (Django + DRF backend in `backend/`, React fro
 
 **The single most important, and most human, finding in this entire 30-epic document series — confirmed directly from the repo, sitting in plain sight the whole time:** `README.md`'s very first line reads:
 
-> `# ⚡ Tablogenix — Smart Electrical Panel E-Commerce Platform`
+> `# ⚡ chiz — Smart Electrical Panel E-Commerce Platform`
 
 **This project has not sold smart electrical panels at any point across this entire 29-epic transformation.** This is leftover branding from whatever generic e-commerce template this codebase originated from before being repurposed, epic by epic, into a Persian cosmetics and skincare platform — and it was never updated, not once, across every other epic's work. The README's "Features at a Glance" section is equally frozen in time: it describes a "Payment Methods" tab as a real feature (the exact concept Epic 18 Task 18.1.1.1 identified as **conceptually obsolete** and recommended repurposing), lists only the original apps (`accounts`, `blog`, `cart`, `chat`, `contact`, `core`, `dashboard`, `order`, `shop`) with **zero mention** of `payments`, `shipping`, `promotions`, or `notifications` — four entire Django apps this series built from scratch across Epics 6, 7, 9, and 16 — and never mentions Celery, Redis caching, Sentry, or any other infrastructure from Epics 20–29. **Task 30.1.1.3 below exists specifically to fix this**, and it is, without exaggeration, the most consequential documentation task in this epic — a new engineer's or new AI agent's very first impression of this codebase, right now, is confidently, completely wrong about what the product even is.
 
@@ -128,7 +128,7 @@ with the actually-registered `SpectacularAPIView` endpoint running
 under completely unconfigured defaults — no project title/description/
 version, meaning the API schema currently identifies itself (if at
 all) as whatever drf-spectacular's generic default is, not as
-"Tablogenix API" or anything meaningful. Beyond the redundant
+"chiz API" or anything meaningful. Beyond the redundant
 dependency itself, given this project has grown to encompass roughly
 a dozen Django apps across this entire series (`accounts`, `blog`,
 `cart`, `chat`, `contact`, `core`, `dashboard`, `order`, `shop`,
@@ -158,8 +158,8 @@ REQUIREMENTS
 - Add `SPECTACULAR_SETTINGS` to `core/settings/base.py`:
   ```python
   SPECTACULAR_SETTINGS = {
-      "TITLE": "Tablogenix API",
-      "DESCRIPTION": "REST API for the Tablogenix Persian cosmetics and skincare e-commerce platform.",
+      "TITLE": "chiz API",
+      "DESCRIPTION": "REST API for the chiz Persian cosmetics and skincare e-commerce platform.",
       "VERSION": "1.0.0",
       "SERVE_INCLUDE_SCHEMA": False,
       "COMPONENT_SPLIT_REQUEST": True,
@@ -525,7 +525,7 @@ independently realize).
 ## This is the final epic in the master backlog.
 
 Across Epics 1 through 30, this document series has taken the
-Tablogenix repository from its original, generic e-commerce-template
+chiz repository from its original, generic e-commerce-template
 state — grounded in a real architecture review that identified fake
 checkout, no localization, no real payment processing, and a dozen
 other production-readiness gaps — through a complete, sequenced

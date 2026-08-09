@@ -1,6 +1,6 @@
 # Epic 14 — Persian Localization & i18n — AI Coding Prompts
 
-Repo: `tablogenix-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
+Repo: `chiz-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
 
 **How to use this document:** same as prior epics — each task is a standalone prompt, feed one at a time in order, commit/review before the next. This is one of the largest, most cross-cutting epics in the whole backlog — it touches settings, every monetary field in the system, every date, the entire frontend layout direction, and the URL/slug strategy. Budget accordingly; several tasks here are genuinely harder and higher-risk than a typical 30-min–2-hr task despite being sized that way in the original backlog, particularly Task 14.1.2.2's currency migration.
 

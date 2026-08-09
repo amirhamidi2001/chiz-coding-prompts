@@ -1,6 +1,6 @@
 # Epic 25 — DevOps / Docker / CI-CD — AI Coding Prompts
 
-Repo: `tablogenix-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
+Repo: `chiz-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
 
 **How to use this document:** same as prior epics — each task is a standalone prompt, feed one at a time in order, commit/review before the next.
 
@@ -76,7 +76,7 @@ REQUIREMENTS
     file.
   - `FRONTEND_URL`/`ALLOWED_HOSTS`/CORS settings pointed at whatever
     staging subdomain this project will actually use (e.g.
-    `staging.tablogenix.com`) — document as a placeholder requiring
+    `staging.chiz.com`) — document as a placeholder requiring
     real configuration, not a working default.
 - Add a `.env.staging.example` template file (mirroring whatever
   `.env.example`-equivalent convention this project established, if
@@ -210,7 +210,7 @@ REQUIREMENTS
           username: ${{ secrets.STAGING_SSH_USER }}
           key: ${{ secrets.STAGING_SSH_KEY }}
           script: |
-            cd /opt/tablogenix
+            cd /opt/chiz
             git pull origin develop
             docker compose -f docker-compose.staging.yml pull
             docker compose -f docker-compose.staging.yml up -d --build
@@ -243,7 +243,7 @@ REQUIREMENTS
   place, so a future reader never again encounters a comment describing
   functionality that doesn't actually exist.
 - Note the deploy commands assume an EXISTING checkout at
-  `/opt/tablogenix` on the target server that gets `git pull`ed — this
+  `/opt/chiz` on the target server that gets `git pull`ed — this
   mirrors what the header comment's ORIGINAL description ("SSH into
   server, pull, restart prod stack") already implied was the intended
   mechanism; if this project's actual server provisioning/directory
@@ -436,7 +436,7 @@ REQUIREMENTS
 
   TIMESTAMP=$(date +%Y%m%d_%H%M%S)
   BACKUP_DIR="/backups"
-  BACKUP_FILE="${BACKUP_DIR}/tablogenix_${TIMESTAMP}.sql.gz"
+  BACKUP_FILE="${BACKUP_DIR}/chiz_${TIMESTAMP}.sql.gz"
 
   mkdir -p "${BACKUP_DIR}"
 
@@ -457,7 +457,7 @@ REQUIREMENTS
   # longer-term retention/expiry for the off-host copies — don't try
   # to manage S3 retention from this script too, that's what S3
   # lifecycle policies are specifically designed for).
-  find "${BACKUP_DIR}" -name "tablogenix_*.sql.gz" -mtime +7 -delete
+  find "${BACKUP_DIR}" -name "chiz_*.sql.gz" -mtime +7 -delete
   ```
   Using `PGPASSWORD` via environment (already how this project's
   `DATABASE_PASSWORD` env var likely gets passed to `pg_dump` given the
@@ -576,7 +576,7 @@ REQUIREMENTS
   fi
 
   BACKUP_FILE="$1"
-  RESTORE_DB_NAME="${RESTORE_DB_NAME:-tablogenix_restore_test}"
+  RESTORE_DB_NAME="${RESTORE_DB_NAME:-chiz_restore_test}"
 
   echo "WARNING: this will DROP and recreate database '${RESTORE_DB_NAME}'."
   read -p "Continue? (yes/no) " confirm

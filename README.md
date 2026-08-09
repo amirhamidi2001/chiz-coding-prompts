@@ -1,4 +1,4 @@
-# Tablogenix → Persian Cosmetics Platform — Master Implementation Backlog
+# chiz → Persian Cosmetics Platform — Master Implementation Backlog
 
 **Structure:** Epic → Phase → Feature → Task
 **Task ID scheme:** `E.P.F.T` (Epic.Phase.Feature.Task)

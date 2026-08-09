@@ -1,6 +1,6 @@
 # Epic 23 — Security Hardening — AI Coding Prompts
 
-Repo: `tablogenix-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
+Repo: `chiz-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
 
 **How to use this document:** same as prior epics — each task is a standalone prompt, feed one at a time in order, commit/review before the next.
 
@@ -61,7 +61,7 @@ REQUIREMENTS
           "font-src": ["'self'"],  # self-hosted Vazirmatn (Epic 14), no external font CDN
           "style-src": ["'self'", "https://cdn.jsdelivr.net"],  # VERIFY against the actual Bootstrap Icons CDN URL used in index.html — adjust to the real, confirmed domain
           "script-src": ["'self'"],
-          "connect-src": ["'self'", "wss://" + config("PRODUCTION_DOMAIN", default="tablogenix.com")],  # WebSocket connections for chat/notifications (Epics 2/16)
+          "connect-src": ["'self'", "wss://" + config("PRODUCTION_DOMAIN", default="chiz.com")],  # WebSocket connections for chat/notifications (Epics 2/16)
           "frame-ancestors": ["'none'"],  # this platform should never be embedded in an iframe elsewhere — clickjacking protection
           "form-action": ["'self'"],
       },

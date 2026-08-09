@@ -1,6 +1,6 @@
 # Epic 15 — SEO — AI Coding Prompts
 
-Repo: `tablogenix-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
+Repo: `chiz-ecommerce-main` (Django + DRF backend in `backend/`, React frontend in `frontend/`)
 
 **How to use this document:** same as prior epics — each task is a standalone prompt, feed one at a time in order, commit/review before the next.
 
@@ -10,7 +10,7 @@ Repo: `tablogenix-ecommerce-main` (Django + DRF backend in `backend/`, React fro
 1. `backend/shop/sitemaps.py` (`ProductSitemap`, `CategorySitemap`) and `backend/blog/sitemaps.py` (`BlogSitemap`) **already exist and are already registered** at `/sitemap.xml` in `backend/core/urls.py`. Task 15.1.2.1 below is an **audit-and-fix** task, not a build-from-scratch task.
 2. **A real, currently-live bug in that existing sitemap setup**: `django.contrib.sites` is **not** installed (confirmed — no `SITE_ID`, not in `INSTALLED_APPS`), and each `Sitemap` subclass's `location()` method returns a bare relative path like `/products/{slug}/` with no domain. Django's sitemap framework resolves the domain for these URLs either via the `sites` framework (not present here) or via the incoming request's host (the domain `/sitemap.xml` itself is served from). **Since this is a decoupled API+SPA architecture, `/sitemap.xml` is served from the Django/API host — but the actual pages at `/products/{slug}/` live on the separate React frontend's domain.** Right now, this sitemap is almost certainly generating URLs pointing at the **backend API domain**, not the frontend site — meaning search engines following this sitemap today would be crawling broken/wrong URLs. Task 15.1.2.1 fixes this using the `FRONTEND_URL` setting.
 3. `frontend/public/robots.txt` **already exists**, but: it points at a placeholder `Sitemap: https://yourdomain.com/sitemap.xml` (never replaced with a real domain), it doesn't disallow `/cart/`, `/checkout/`, or other non-indexable app-state routes (only `/admin/`), and it has a `Crawl-delay: 5` directive that Google explicitly ignores (only Bing/Yandex respect it) — worth knowing when reasoning about its actual effect. Task 15.1.2.2 fixes these.
-4. There is **no `react-helmet-async`** (or any per-page meta-tag library) anywhere in `frontend/package.json` — every page currently shares whatever static `<title>`/meta tags exist in `index.html` (`<title>TabloGenix E-Commerce</title>`, no `<meta name="description">` at all), meaning **zero pages have distinct, accurate SEO metadata today**, including product pages.
+4. There is **no `react-helmet-async`** (or any per-page meta-tag library) anywhere in `frontend/package.json` — every page currently shares whatever static `<title>`/meta tags exist in `index.html` (`<title>chiz E-Commerce</title>`, no `<meta name="description">` at all), meaning **zero pages have distinct, accurate SEO metadata today**, including product pages.
 
 ---
 
@@ -29,7 +29,7 @@ is fully merged.
 
 CONTEXT — CONFIRMED DIRECTLY FROM THE REPO
 No per-page meta-tag library exists. `index.html` has a single static
-`<title>TabloGenix E-Commerce</title>` and no `<meta name="description">`
+`<title>chiz E-Commerce</title>` and no `<meta name="description">`
 at all — every route in this single-page app currently shares
 IDENTICAL page metadata regardless of whether the visitor is on the
 homepage, a specific product page, or a category listing. This is a
@@ -79,7 +79,7 @@ REQUIREMENTS
   Remove the now-redundant static `<title>` from `index.html` (or leave
   it as a final fallback for the brief moment before React/Helmet
   hydrates — either is fine, but if you leave it, make sure it's
-  UPDATED to Persian too, not left as the stale "TabloGenix E-Commerce"
+  UPDATED to Persian too, not left as the stale "chiz E-Commerce"
   English placeholder, since that would flash briefly on every page
   load).
 - This task does NOT yet add page-SPECIFIC titles/descriptions (that's
@@ -599,8 +599,8 @@ REQUIREMENTS
   Verify this override actually produces correct output by RUNNING the
   sitemap view locally and inspecting the raw generated `sitemap.xml`
   content — confirm every `<loc>` entry now shows the frontend domain
-  (e.g. `https://tablogenix.com/products/...`), not the backend API
-  domain (e.g. `https://api.tablogenix.com/products/...` or
+  (e.g. `https://chiz.com/products/...`), not the backend API
+  domain (e.g. `https://api.chiz.com/products/...` or
   `localhost:8000/products/...`) — this is the actual, concrete
   verification that the bug is fixed, not just that the code compiles.
   Consider extracting this `get_urls()` override into a small shared
