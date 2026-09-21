@@ -1,948 +1,1272 @@
-# Phase 5 — Persian i18n + RTL (Frontend)
+# Phase 5 — Admin Dashboard سفارشی (React)
 
 ## Implementation Prompts
 
-### Prompt 1 — زیرساخت i18next + `LocaleProvider` + تنظیمات پایهٔ RTL/فونت
+### Prompt 1 — افشای `is_staff` + `apps/adminapi` Skeleton + Dashboard Stats
 
 ```
-Goal: Install and configure i18next/react-i18next, build a LocaleProvider
-mirroring the existing ThemeProvider's exact structure, set dir="rtl"
-and lang="fa" globally, and load the Vazirmatn font. No feature-level
-text translation or Tailwind class changes yet — this prompt is purely
-foundational plumbing.
+Goal: Expose is_staff on the login/me user serializer (this unblocks
+every frontend guard in this Phase), create the apps/adminapi app
+skeleton, and build its first endpoint: a JSON dashboard-stats
+endpoint reusing the exact counting logic from the previous roadmap's
+Django Admin dashboard view.
 
 Before starting, read these files completely:
-1. src/app/providers/ThemeProvider.tsx, ThemeContext.ts, useTheme.ts —
-   the full existing theme provider implementation, to copy its exact
-   structural pattern (Context + localStorage persistence +
-   useSyncExternalStore for external-source values + a single
-   DOM-syncing useEffect)
-2. src/App.tsx — to see exactly how ThemeProvider is currently wired
-   in, so LocaleProvider is added the same way
-3. index.html — the full current file
-4. src/styles/globals.css — the full current file, to see the existing
-   font-family setup and where to add Vazirmatn
-5. package.json — confirm exact current React/TypeScript versions for
-   compatibility with the i18next/react-i18next versions you'll add
+1. apps/users/serializers.py — the exact serializer class used for
+   login/`/me` responses (confirm its exact name and current `fields`
+   list before editing)
+2. Wherever the previous roadmap's AdminDashboardView (server-rendered
+   Django Admin dashboard) lives — grep -rn "def admin_dashboard_view"
+   apps/ to find it — read its exact four counting queries (pending
+   teacher verifications, open disputes, pending payouts, review
+   reports) to replicate identically, not re-derive from scratch
+3. apps/common/permissions.py — confirm no custom IsStaff class
+   already exists (it doesn't, per this project's current state) so
+   DRF's built-in IsAdminUser is the correct, standard choice
+4. Any existing app's apps.py (e.g. apps/reviews/apps.py) for this
+   project's exact AppConfig pattern
 
 What to build:
 
-1. Install dependencies: i18next, react-i18next (latest stable
-   versions compatible with this project's React version). Add them to
-   package.json's dependencies (not devDependencies — they're runtime
-   dependencies).
+a) In apps/users/serializers.py, add "is_staff" to the fields list of
+   whichever serializer produces the login/me response (confirmed in
+   step 1 of your reading) — a single-line addition, nothing else in
+   that serializer changes.
 
-2. Create src/shared/i18n/locales/fa/common.json with an initial small
-   set of genuinely common keys (not yet the full app's copy — that's
-   built out namespace-by-namespace in later prompts):
-   {
-     "app": { "name": "افرا" },
-     "actions": { "save": "ذخیره", "cancel": "انصراف", "submit": "ثبت", "retry": "تلاش مجدد", "close": "بستن" },
-     "loading": "در حال بارگذاری…",
-     "errors": { "generic": "خطایی رخ داد. لطفاً دوباره تلاش کنید." }
-   }
-   (Keep this intentionally minimal for now — enough to prove the
-   plumbing works end to end without pre-writing all of the app's
-   copy in this foundational prompt.)
+b) Create apps/adminapi/ app structure: __init__.py, apps.py (matching
+   the exact AppConfig style found in step 4), urls.py, permissions.py,
+   views/__init__.py.
 
-3. Create src/shared/i18n/index.ts:
-   Initialize i18next with react-i18next, configured with:
-   - lng: "fa", fallbackLng: "fa" (single-locale for now, per this
-     Phase's design — structured so a second locale could be added
-     later without an architecture change, but not building any
-     language-switcher UI now)
-   - ns: ["common"] initially (grows as later prompts add
-     auth/bookings/payments/etc. namespaces — document this in a
-     comment: "Add new namespaces here as each feature's translations
-     are added in later prompts of this Phase")
-   - resources: { fa: { common: <imported common.json> } }
-   - interpolation: { escapeValue: false } (React already escapes)
-   Export the configured i18next instance.
+c) In apps/adminapi/permissions.py:
+   from rest_framework.permissions import IsAdminUser
+   # Every view in apps.adminapi uses DRF's built-in IsAdminUser
+   # (checks request.user.is_staff) directly. This module exists
+   # purely so every admin view in this app imports permissions from
+   # one place, making it trivial to audit that no admin endpoint
+   # forgot to set permission_classes.
 
-4. Create src/app/providers/LocaleContext.ts, mirroring
-   ThemeContext.ts's exact shape:
-   export interface LocaleContextValue {
-     locale: "fa";
-     dir: "rtl";
-   }
-   export const LocaleContext = createContext<LocaleContextValue | undefined>(undefined);
-   (Kept deliberately simple/fixed for now since only "fa"/"rtl" exist
-   — this is intentionally less complex than ThemeContext's
-   light/dark/system three-way state, since there's no equivalent
-   "auto-detect" concept for locale in this Phase's scope. Document
-   this asymmetry with a comment referencing ThemeContext as the
-   pattern this was modeled on, explaining why it's simpler.)
+d) Create apps/adminapi/views/dashboard.py:
+   class AdminDashboardStatsView(APIView):
+       permission_classes = [IsAdminUser]
+       def get(self, request):
+           from apps.teachers.models import TeacherVerification
+           from apps.payments.models import Dispute, PayoutLedgerEntry
+           from apps.reviews.models import ReviewReport
+           return Response({
+               "pending_verifications": TeacherVerification.objects.filter(status="UNDER_REVIEW").count(),
+               "open_disputes": Dispute.objects.filter(status="OPEN").count(),  # confirm exact status value from step 1's reading
+               "pending_payouts": PayoutLedgerEntry.objects.filter(payout_status="PENDING_TRANSFER").count(),
+               "flagged_reviews": ReviewReport.objects.count(),
+           })
+   (Use the EXACT same field/status values the existing Django Admin
+   dashboard view uses — do not guess or slightly alter them; this is
+   meant to be the identical logic in a new transport format, not a
+   redesign.)
 
-5. Create src/app/providers/LocaleProvider.tsx, mirroring
-   ThemeProvider.tsx's exact structure and code style (its function
-   naming conventions, its comment style, its default export):
-   - Imports and initializes src/shared/i18n/index.ts (side-effect
-     import, or explicit init call — match whatever's cleanest)
-   - A useEffect that applies dir="rtl" and lang="fa" to
-     document.documentElement (document.documentElement.dir = "rtl";
-     document.documentElement.lang = "fa";) — mirroring
-     applyResolvedTheme's DOM-syncing effect pattern exactly
-   - Wraps children in both LocaleContext.Provider (value={{ locale:
-     "fa", dir: "rtl" }}) and react-i18next's I18nextProvider
-   - Also create a small useLocale() hook (mirroring useTheme.ts's
-     exact shape) that reads LocaleContext via useContext with the
-     same "throw if used outside provider" guard pattern useTheme.ts
-     uses
+e) apps/adminapi/urls.py:
+   urlpatterns = [
+       path("dashboard/stats/", AdminDashboardStatsView.as_view()),
+   ]
+   Wire into config/urls.py: path("api/admin/", include("apps.adminapi.urls"))
 
-6. In index.html:
-   - Change <html lang="en"> to <html lang="fa" dir="rtl"> (a correct
-     static default before JS even runs, so there's no flash of
-     LTR-then-RTL on first paint — the LocaleProvider's effect in step
-     5 then just confirms/maintains this at runtime)
-   - Add a font preload/link for Vazirmatn (use a CDN link, e.g. from
-     Google Fonts if Vazirmatn is available there, or note in a
-     comment that self-hosting is preferable for production and this
-     is a starting point — check what's actually available and use the
-     most reliable option; prefer a preconnect + stylesheet link
-     pattern matching standard web font loading best practice)
-
-7. In src/styles/globals.css:
-   Set Vazirmatn as the primary font-family on body (with the same
-   fallback chain already used in the email templates —
-   'Vazirmatn', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-   Helvetica, Arial, sans-serif — for visual consistency between the
-   app and the transactional emails from Phase 4).
-
-8. In src/App.tsx:
-   Wrap the existing provider tree with <LocaleProvider> — placed
-   outermost or wherever makes sense relative to ThemeProvider (check
-   whether locale should wrap theme or vice versa; since they're
-   independent concerns, order likely doesn't matter functionally, but
-   pick one and keep it consistent — document your choice).
+f) Add "apps.adminapi" to INSTALLED_APPS in config/settings/base.py.
 
 Files affected:
-- package.json (+ package-lock.json regenerated by npm install)
-- src/shared/i18n/index.ts (new)
-- src/shared/i18n/locales/fa/common.json (new)
-- src/app/providers/LocaleContext.ts (new)
-- src/app/providers/LocaleProvider.tsx (new)
-- src/app/providers/useLocale.ts (new)
-- index.html
-- src/styles/globals.css
-- src/App.tsx
+- apps/users/serializers.py (one line)
+- apps/adminapi/__init__.py, apps.py, urls.py, permissions.py,
+  views/__init__.py, views/dashboard.py (new)
+- config/urls.py
+- config/settings/base.py
 
 Then write tests:
-- src/app/providers/__tests__/LocaleProvider.test.tsx: rendering
-  LocaleProvider sets document.documentElement.dir === "rtl" and
-  lang === "fa"; useLocale() throws when used outside the provider
-  (mirroring however ThemeProvider's equivalent guard is already
-  tested, if it is — check tests/app/providers/ThemeProvider.test.tsx
-  or similar for the exact testing convention to follow)
-- A minimal smoke test rendering a component that calls useTranslation("common")
-  and confirms t("actions.save") resolves to "ذخیره"
+- tests/users/test_serializers.py (or wherever login/me is already
+  tested): confirm is_staff now appears in the response for both a
+  staff and non-staff user
+- tests/adminapi/test_dashboard.py: a staff user gets 200 with correct
+  counts (create known fixture data and assert exact numbers, matching
+  the previous roadmap's dashboard test approach if one exists); a
+  non-staff authenticated user gets 403; an unauthenticated request
+  gets 401
+
+Acceptance Criteria:
+- pytest tests/adminapi/ tests/users/ -v passes completely
+- python manage.py makemigrations --check --dry-run is empty (this app
+  has no models, so this should trivially hold)
+
+Verification Steps:
+1. pytest tests/adminapi/ tests/users/ -v
+2. python manage.py check
+3. git diff --stat
+```
+
+### Prompt 2 — Endpointهای مدیریت کاربران (`Users`)
+
+```
+Goal: Build read-only user listing/detail and activate/deactivate
+endpoints in apps.adminapi, adding the two missing tiny service
+functions (activate/deactivate don't exist yet anywhere) following
+this project's exact @log_admin_action convention.
+
+Before starting, read:
+1. apps/users/models.py — User's exact fields (is_active, role,
+   date_joined or created_at, etc.)
+2. apps/users/services.py — the file's existing structure, to add two
+   new small functions in the same style
+3. apps/common/logging.py — log_admin_action's exact signature
+4. apps/teachers/views.py — VerificationStatusView or similar, as a
+   precedent for pagination_class usage in this project
+
+What to build:
+
+a) In apps/users/services.py, add:
+   @log_admin_action("user_deactivated", target_param="user_id")
+   def deactivate_user(*, user_id: str, admin_user: "User") -> "User":
+       """Deactivate a user account (blocks login; does not delete any
+       data). Idempotent-safe: deactivating an already-inactive user
+       is a harmless no-op, not an error — unlike the state-machine
+       transitions elsewhere in this project (verification, disputes),
+       this is a simple boolean toggle with no invalid-transition
+       concept."""
+       with transaction.atomic():
+           user = User.objects.select_for_update().get(id=user_id)
+           user.is_active = False
+           user.save(update_fields=["is_active"])
+       return user
+
+   @log_admin_action("user_activated", target_param="user_id")
+   def activate_user(*, user_id: str, admin_user: "User") -> "User":
+       (Mirror the above, setting is_active = True.)
+
+   Raise NotFoundError if user_id doesn't match any row, matching this
+   project's established convention.
+
+b) Create apps/adminapi/serializers.py (or views/users.py directly, if
+   this project's other admin-facing serializers are typically inlined
+   — check apps/adminapi/views/dashboard.py's precedent from Prompt 1,
+   which had none; for a list/detail view a serializer is genuinely
+   needed here, so create one):
+   class AdminUserSerializer(serializers.ModelSerializer):
+       class Meta:
+           model = User
+           fields = ["id", "email", "full_name", "role", "is_active", "is_staff", "is_email_verified", "date_joined"]
+           read_only_fields = fields
+   (Confirm the exact field name for account-creation timestamp on
+   User — date_joined is Django's default AbstractUser field name;
+   verify this project's User model actually uses that name rather
+   than a custom created_at, before assuming.)
+
+c) apps/adminapi/views/users.py:
+   class AdminUserListView(generics.ListAPIView):
+       permission_classes = [IsAdminUser]
+       serializer_class = AdminUserSerializer
+       pagination_class = StandardResultsPagination
+       def get_queryset(self):
+           qs = User.objects.all().order_by("-date_joined")
+           role = self.request.query_params.get("role")
+           if role:
+               qs = qs.filter(role=role)
+           search = self.request.query_params.get("search")
+           if search:
+               qs = qs.filter(Q(email__icontains=search) | Q(full_name__icontains=search))
+           return qs
+
+   class AdminUserDetailView(generics.RetrieveAPIView):
+       permission_classes = [IsAdminUser]
+       serializer_class = AdminUserSerializer
+       queryset = User.objects.all()
+       lookup_field = "id"
+
+   class AdminUserActivateView(APIView):
+       permission_classes = [IsAdminUser]
+       def post(self, request, user_id):
+           user = services.activate_user(user_id=user_id, admin_user=request.user)
+           return Response(AdminUserSerializer(user).data)
+
+   class AdminUserDeactivateView(APIView):
+       (mirror, calling services.deactivate_user)
+
+d) Wire routes in apps/adminapi/urls.py:
+   users/, users/<uuid:user_id>/, users/<uuid:user_id>/activate/,
+   users/<uuid:user_id>/deactivate/
+
+Files affected:
+- apps/users/services.py
+- apps/adminapi/serializers.py (new)
+- apps/adminapi/views/users.py (new)
+- apps/adminapi/urls.py
+
+Then write tests: tests/adminapi/test_users.py covering list (with
+role/search filters), detail, activate, deactivate, permission
+rejection for non-staff, and confirm each activate/deactivate call
+creates exactly one AdminAuditLog row.
+
+Acceptance Criteria:
+- pytest tests/adminapi/ tests/users/ -v passes completely
+
+Verification Steps:
+1. pytest tests/adminapi/ -v
+2. git diff --stat
+```
+
+### Prompt 3 — Endpointهای مدیریت تأیید مدرس (`Teachers`)
+
+```
+Goal: Build admin endpoints for the full teacher verification review
+flow, calling the existing apps.teachers.services functions from the
+previous roadmap's Phase 2 with zero new business logic.
+
+Before starting, read:
+1. apps/teachers/services.py — the exact current signatures of
+   approve_teacher, reject_teacher, suspend_teacher, unsuspend_teacher
+   (confirmed earlier: approve_teacher(*, verification_id, admin_user),
+   reject_teacher and suspend_teacher additionally take a reason —
+   confirm reject_teacher/suspend_teacher's exact parameter name for
+   the reason argument before writing the view)
+2. apps/teachers/models.py — TeacherVerification's fields, and
+   TeacherDocument's fields (for the serializer)
+3. apps/teachers/serializers.py — TeacherVerificationSerializer /
+   TeacherDocumentSerializer, if these already exist from the previous
+   roadmap's Phase 2 (they likely do, for the teacher's own
+   self-service verification view) — REUSE them directly in
+   apps.adminapi rather than building parallel serializers, if their
+   field set is already suitable for admin viewing (it likely exposes
+   everything needed); only build a new admin-specific serializer if
+   the existing one is missing a field an admin genuinely needs (e.g.
+   the teacher's name/email, which the self-service serializer
+   wouldn't need since the teacher already knows who they are)
+
+What to build:
+
+a) If needed, extend or wrap the existing TeacherVerificationSerializer
+   with an admin variant that adds teacher_name/teacher_email (via
+   source="teacher_profile.user.full_name" etc.) — confirm first
+   whether this is actually necessary before adding a new serializer
+   class.
+
+b) apps/adminapi/views/teachers.py:
+   class AdminTeacherVerificationListView(generics.ListAPIView):
+       permission_classes = [IsAdminUser]
+       serializer_class = <the serializer from step a>
+       pagination_class = StandardResultsPagination
+       def get_queryset(self):
+           qs = TeacherVerification.objects.select_related("teacher_profile__user").order_by("-created_at")
+           status = self.request.query_params.get("status")
+           if status:
+               qs = qs.filter(status=status)
+           return qs
+
+   class AdminTeacherVerificationDetailView(generics.RetrieveAPIView):
+       (list documents too — confirm whether the existing serializer
+       already nests TeacherDocument, per the previous roadmap's design;
+       if not, this view may need prefetch_related("documents") and a
+       nested documents field)
+
+   class AdminTeacherVerificationApproveView(APIView):
+       permission_classes = [IsAdminUser]
+       def post(self, request, verification_id):
+           verification = teachers_services.approve_teacher(
+               verification_id=verification_id, admin_user=request.user,
+           )
+           return Response(serializer_class(verification).data)
+
+   class AdminTeacherVerificationRejectView(APIView):
+       def post(self, request, verification_id):
+           reason = request.data.get("reason", "")
+           verification = teachers_services.reject_teacher(
+               verification_id=verification_id, admin_user=request.user, reason=reason,
+           )
+           return Response(...)
+       (Confirm reject_teacher actually requires a non-empty reason —
+       if so, validate reason is present here and return 400 via a
+       small input serializer rather than letting an empty string
+       silently pass through to the service layer if that's not
+       actually valid there either — check the service function's own
+       validation first; if it already validates and raises
+       ApplicationError for an empty reason, this view doesn't need to
+       duplicate that check, just let the exception propagate through
+       this project's standard exception-handling middleware.)
+
+   class AdminTeacherVerificationSuspendView(APIView): (mirror reject,
+       calling suspend_teacher)
+
+   class AdminTeacherVerificationUnsuspendView(APIView): (mirror
+       approve, calling unsuspend_teacher, no reason needed)
+
+c) Wire routes in apps/adminapi/urls.py under
+   teachers/verifications/... matching the pattern from Prompt 2.
+
+CRITICAL: every one of these five views must contain ZERO business
+logic beyond input extraction and calling the existing service
+function — no status checks, no conditional branching on
+verification.status, nothing beyond what's shown above. If you find
+yourself writing an if statement checking business state in one of
+these views, stop — that logic belongs in apps.teachers.services, not
+here, and if it's missing there, that's a sign this view is wrong, not
+that the check should be added here.
+
+Files affected:
+- apps/teachers/serializers.py (only if an admin-specific serializer
+  addition was genuinely needed — report the decision)
+- apps/adminapi/views/teachers.py (new)
+- apps/adminapi/urls.py
+
+Then write tests: tests/adminapi/test_teachers.py covering list
+(filterable by status), detail (including documents), and all four
+action endpoints (happy path + invalid-transition error propagation,
+e.g. approving an already-APPROVED verification returns the same
+ApplicationError-mapped response the previous roadmap's service-layer
+test already covers — this view test should confirm the error reaches
+the HTTP layer correctly, not re-test the state machine itself, which
+is already covered by apps.teachers.services' own test suite).
+
+Acceptance Criteria:
+- pytest tests/adminapi/ -v passes completely
+- Manual code review confirms zero business-logic branching in
+  apps/adminapi/views/teachers.py
+
+Verification Steps:
+1. pytest tests/adminapi/ -v
+2. git diff --stat
+```
+
+### Prompt 4 — Endpointهای Disputes + Payouts
+
+```
+Goal: Build admin endpoints for dispute resolution and payout transfer
+confirmation, calling the existing apps.payments.services functions
+(resolve_dispute, mark_payout_as_transferred) from the previous
+roadmap with zero new business logic.
+
+Before starting, read:
+1. apps/payments/services.py — resolve_dispute's and
+   mark_payout_as_transferred's exact current signatures (confirmed
+   earlier to exist; re-read their full parameter lists before writing
+   the input serializers, since resolve_dispute likely needs a
+   resolution note and/or split percentages per the previous roadmap's
+   Phase 8 design)
+2. apps/payments/models.py — Dispute and PayoutLedgerEntry's exact
+   fields
+3. apps/payments/forms.py — DisputeResolutionForm, if it exists from
+   the previous roadmap's Phase 8 Django-Admin custom resolve page —
+   its field list is the authoritative source for what
+   resolve_dispute actually needs as input; build a matching DRF
+   serializer with the same fields, don't guess
+
+What to build:
+
+a) apps/adminapi/serializers.py, add:
+   class AdminDisputeSerializer(serializers.ModelSerializer):
+       class Meta:
+           model = Dispute
+           fields = [...]  # match Dispute's real fields
+   class ResolveDisputeInputSerializer(serializers.Serializer):
+       (fields matching DisputeResolutionForm's real fields exactly —
+       confirm before writing)
+   class AdminPayoutSerializer(serializers.ModelSerializer):
+       class Meta:
+           model = PayoutLedgerEntry
+           fields = [...]
+   class MarkPayoutTransferredInputSerializer(serializers.Serializer):
+       bank_reference_number = serializers.CharField()
+
+b) apps/adminapi/views/payments.py:
+   class AdminDisputeListView(generics.ListAPIView):
+       permission_classes = [IsAdminUser]
+       serializer_class = AdminDisputeSerializer
+       pagination_class = StandardResultsPagination
+       def get_queryset(self):
+           qs = Dispute.objects.select_related("payment").order_by("-created_at")
+           status = self.request.query_params.get("status")
+           if status:
+               qs = qs.filter(status=status)
+           return qs
+
+   class AdminDisputeResolveView(APIView):
+       permission_classes = [IsAdminUser]
+       def post(self, request, dispute_id):
+           input_serializer = ResolveDisputeInputSerializer(data=request.data)
+           input_serializer.is_valid(raise_exception=True)
+           dispute = payments_services.resolve_dispute(
+               dispute_id=dispute_id, admin_user=request.user,
+               **input_serializer.validated_data,
+           )
+           return Response(AdminDisputeSerializer(dispute).data)
+
+   class AdminPayoutListView(generics.ListAPIView):
+       (mirror the dispute list, filterable by payout_status)
+
+   class AdminPayoutMarkTransferredView(APIView):
+       def post(self, request, entry_id):
+           input_serializer = MarkPayoutTransferredInputSerializer(data=request.data)
+           input_serializer.is_valid(raise_exception=True)
+           entry = payments_services.mark_payout_as_transferred(
+               entry_id=entry_id, admin_user=request.user,
+               bank_reference_number=input_serializer.validated_data["bank_reference_number"],
+           )
+           return Response(AdminPayoutSerializer(entry).data)
+
+c) Wire routes in apps/adminapi/urls.py under payments/disputes/... and
+   payments/payouts/....
+
+Same CRITICAL constraint as Prompt 3: zero business logic in these
+views beyond input validation and a single service call.
+
+Files affected:
+- apps/adminapi/serializers.py
+- apps/adminapi/views/payments.py (new)
+- apps/adminapi/urls.py
+
+Then write tests: tests/adminapi/test_payments.py covering both list
+views (with status filters), resolve (happy path + invalid-status
+propagation), and mark-transferred (happy path + invalid-status
+propagation), plus permission checks.
+
+Acceptance Criteria:
+- pytest tests/adminapi/ -v passes completely
+- Manual code review confirms zero business-logic branching in
+  apps/adminapi/views/payments.py
+
+Verification Steps:
+1. pytest tests/adminapi/ -v
+2. git diff --stat
+```
+
+### Prompt 5 — Endpoint نظارت بر نظرات (`Reviews`)
+
+```
+Goal: Build admin endpoints for review moderation, calling the
+existing apps.reviews.services.moderate_review function with zero new
+business logic.
+
+Before starting, read:
+1. apps/reviews/services.py — moderate_review's exact signature
+   (confirmed: moderate_review(*, review_id, admin_user, new_status))
+2. apps/reviews/models.py — Review and ReviewReport's exact fields
+
+What to build:
+
+a) apps/adminapi/serializers.py, add:
+   class AdminReviewSerializer(serializers.ModelSerializer):
+       student_name = serializers.CharField(source="student.full_name", read_only=True)
+       teacher_name = serializers.CharField(source="session.teacher.full_name", read_only=True)
+       report_count = serializers.IntegerField(source="reports.count", read_only=True)
+       class Meta:
+           model = Review
+           fields = ["id", "session", "student_name", "teacher_name", "rating", "comment", "status", "report_count", "created_at"]
+           read_only_fields = fields
+
+b) apps/adminapi/views/reviews.py:
+   class AdminReviewListView(generics.ListAPIView):
+       permission_classes = [IsAdminUser]
+       serializer_class = AdminReviewSerializer
+       pagination_class = StandardResultsPagination
+       def get_queryset(self):
+           qs = Review.objects.select_related("student", "session__teacher").order_by("-created_at")
+           status = self.request.query_params.get("status")
+           if status:
+               qs = qs.filter(status=status)
+           flagged_only = self.request.query_params.get("flagged") == "true"
+           if flagged_only:
+               qs = qs.filter(reports__isnull=False).distinct()
+           return qs
+
+   class AdminReviewModerateView(APIView):
+       permission_classes = [IsAdminUser]
+       def post(self, request, review_id):
+           new_status = request.data.get("new_status")
+           review = reviews_services.moderate_review(
+               review_id=review_id, admin_user=request.user, new_status=new_status,
+           )
+           return Response(AdminReviewSerializer(review).data)
+
+c) Wire routes in apps/adminapi/urls.py under reviews/....
+
+Same CRITICAL constraint as Prompts 3-4.
+
+Files affected:
+- apps/adminapi/serializers.py
+- apps/adminapi/views/reviews.py (new)
+- apps/adminapi/urls.py
+
+Then write tests: tests/adminapi/test_reviews.py covering list (status
++ flagged filters, confirming the distinct() correctly avoids
+duplicate rows for a review with multiple reports), moderate (happy
+path + invalid new_status propagation).
+
+Acceptance Criteria:
+- pytest tests/adminapi/ -v passes completely
+- The flagged-filter distinct() regression test explicitly passes
+
+Verification Steps:
+1. pytest tests/adminapi/ -v
+2. git diff --stat
+```
+
+### Prompt 6 — Endpointهای مدیریت محتوا (`Content`)
+
+```
+Goal: Build full admin CRUD endpoints for StaticPage and Article,
+calling the existing apps.content.services functions from Phase 0 of
+this roadmap with zero new business logic.
+
+Before starting, read:
+1. apps/content/services.py, models.py, serializers.py (this roadmap's
+   Phase 0) — every function's exact signature
+   (update_static_page, create_article, update_article,
+   publish_article, unpublish_article, archive_article)
+
+What to build:
+
+a) apps/adminapi/serializers.py, add:
+   class AdminStaticPageSerializer(serializers.ModelSerializer):
+       class Meta:
+           model = StaticPage
+           fields = ["slug", "title", "body", "updated_at", "updated_by"]
+           read_only_fields = ["updated_at", "updated_by"]
+
+   class AdminArticleSerializer(serializers.ModelSerializer):
+       class Meta:
+           model = Article
+           fields = ["id", "slug", "title", "excerpt", "body", "cover_image", "category", "status", "published_at", "author", "created_at"]
+           read_only_fields = ["id", "status", "published_at", "author", "created_at"]
+
+b) apps/adminapi/views/content.py:
+   class AdminStaticPageListView(generics.ListAPIView):
+       permission_classes = [IsAdminUser]
+       serializer_class = AdminStaticPageSerializer
+       queryset = StaticPage.objects.all()
+
+   class AdminStaticPageUpdateView(APIView):
+       permission_classes = [IsAdminUser]
+       def patch(self, request, slug):
+           page = content_services.update_static_page(
+               slug=slug, title=request.data.get("title"),
+               body=request.data.get("body"), admin_user=request.user,
+           )
+           return Response(AdminStaticPageSerializer(page).data)
+
+   class AdminArticleListView(generics.ListAPIView):
+       permission_classes = [IsAdminUser]
+       serializer_class = AdminArticleSerializer
+       pagination_class = StandardResultsPagination
+       def get_queryset(self):
+           qs = Article.objects.select_related("author").order_by("-created_at")
+           status = self.request.query_params.get("status")
+           if status:
+               qs = qs.filter(status=status)
+           return qs
+       (Deliberately NOT filtered to PUBLISHED-only here, unlike the
+       public content.api.ts from Phase 2 — admins need to see and
+       manage DRAFT/ARCHIVED articles too; confirm this view uses a
+       fresh queryset, NOT apps.content.selectors.list_published_articles,
+       which is intentionally public-scoped and wrong for this
+       admin-facing use case.)
+
+   class AdminArticleCreateView(APIView):
+       permission_classes = [IsAdminUser]
+       def post(self, request):
+           article = content_services.create_article(
+               author=request.user, **request.data,
+           )
+           return Response(AdminArticleSerializer(article).data, status=201)
+
+   class AdminArticleUpdateView(APIView):
+       def patch(self, request, article_id):
+           article = content_services.update_article(
+               article_id=article_id, admin_user=request.user, **request.data,
+           )
+           return Response(...)
+
+   class AdminArticlePublishView(APIView):
+       def post(self, request, article_id):
+           article = content_services.publish_article(article_id=article_id, admin_user=request.user)
+           return Response(...)
+
+   class AdminArticleUnpublishView, AdminArticleArchiveView: (mirror,
+       calling unpublish_article/archive_article)
+
+c) Wire routes in apps/adminapi/urls.py under content/pages/... and
+   content/articles/....
+
+Same CRITICAL constraint as Prompts 3-5.
+
+Files affected:
+- apps/adminapi/serializers.py
+- apps/adminapi/views/content.py (new)
+- apps/adminapi/urls.py
+
+Then write tests: tests/adminapi/test_content.py covering static page
+update, article list (including DRAFT/ARCHIVED visibility, unlike the
+public API), create, update, publish/unpublish/archive (happy paths +
+invalid-transition propagation, e.g. the published_at-preservation
+behavior from Phase 0 should still hold when triggered through this
+new admin endpoint — add an explicit test confirming this, since it's
+this Phase's most subtle inherited behavior).
+
+Acceptance Criteria:
+- pytest tests/adminapi/ -v passes completely
+- The published_at-preservation regression test (via this new
+  endpoint) explicitly passes
+
+Verification Steps:
+1. pytest tests/adminapi/ -v
+2. git diff --stat
+```
+
+### Prompt 7 — Endpoint `AuditLog` + بررسی نهایی Backend
+
+```
+Goal: Build a read-only AdminAuditLog listing endpoint, then do a
+comprehensive final review of the entire apps.adminapi app to confirm
+the zero-new-business-logic principle held throughout every prompt in
+this Phase.
+
+Before starting, read apps/common/models.py's AdminAuditLog fields in
+full.
+
+What to build:
+
+a) apps/adminapi/serializers.py, add:
+   class AdminAuditLogSerializer(serializers.ModelSerializer):
+       actor_email = serializers.CharField(source="actor.email", read_only=True, default=None)
+       class Meta:
+           model = AdminAuditLog
+           fields = ["id", "actor_email", "action", "target_type", "target_id", "details", "created_at"]
+           read_only_fields = fields
+
+b) apps/adminapi/views/audit_log.py:
+   class AdminAuditLogListView(generics.ListAPIView):
+       permission_classes = [IsAdminUser]
+       serializer_class = AdminAuditLogSerializer
+       pagination_class = StandardResultsPagination
+       def get_queryset(self):
+           qs = AdminAuditLog.objects.select_related("actor").order_by("-created_at")
+           action = self.request.query_params.get("action")
+           if action:
+               qs = qs.filter(action=action)
+           return qs
+
+c) Wire the route: audit-log/
+
+Files affected:
+- apps/adminapi/serializers.py
+- apps/adminapi/views/audit_log.py (new)
+- apps/adminapi/urls.py
+
+Then, as the final step of this prompt, do a comprehensive review:
+1. Read every file under apps/adminapi/views/ created across Prompts
+   1-7 in full, one more time.
+2. Confirm, for each view that performs a write (approve, reject,
+   suspend, unsuspend, resolve dispute, mark payout transferred,
+   moderate review, update/create/publish/unpublish/archive
+   content, activate/deactivate user): it calls exactly one existing
+   service function from apps.teachers/apps.payments/apps.reviews/
+   apps.content/apps.users, with no additional business-rule checks
+   written directly in the view. Report this confirmation explicitly
+   in your final summary — list every write endpoint and the exact
+   service function it calls, as a definitive proof-of-reuse table.
+3. Run the full backend test suite: pytest -x
+4. Confirm python manage.py makemigrations --check --dry-run is empty
+   (apps.adminapi has no models of its own, so this should hold
+   trivially, but verify nothing was accidentally added).
+
+Files affected (continued):
+- none beyond what's listed above — this is a review-and-verify step
+
+Acceptance Criteria:
+- pytest tests/adminapi/ -v passes completely
+- pytest -x (full backend suite) passes — zero regression across every
+  domain this Phase touched
+- The proof-of-reuse table in your final summary accounts for every
+  write endpoint built in Prompts 2-7
+
+Verification Steps:
+1. pytest tests/adminapi/ -v
+2. pytest -x -v (full backend suite)
+3. python manage.py makemigrations --check --dry-run
+4. git diff --stat (summary of the entire backend half of this Phase)
+```
+
+### Prompt 8 — فرانت‌اند: `RequireStaff` Guard + Shell و Layout پنل ادمین
+
+```
+Goal: Build the frontend foundation for the admin panel: expose
+is_staff in the auth types, add a RequireStaff route guard mirroring
+this project's existing RequireRole.tsx exactly, and build the
+AdminLayout shell (sidebar navigation) with its route tree skeleton —
+no actual data-driven pages yet, just the shell and empty placeholder
+pages for each planned section.
+
+Before starting, read these files completely:
+1. src/features/auth/types/auth.types.ts — AuthUser's current shape
+2. src/shared/components/guards/RequireRole.tsx — the exact structural
+   pattern to replicate precisely for RequireStaff
+3. src/app/routes/router.tsx — the full current route tree, to find
+   the correct place to nest a new /admin/* subtree (likely a sibling
+   of the existing AppLayout-wrapped routes, since AdminLayout is a
+   distinct layout, not a variant of AppLayout)
+4. src/shared/components/layout/AppLayout.tsx and Sidebar.tsx — the
+   closest existing precedent for "a layout component with a sidebar
+   nav," to match its structural/styling conventions for AdminLayout
+   (reuse the same underlying UI primitives — Button, etc. — not a
+   parallel design system)
+5. src/app/routes/lazyPages.ts — the exact lazy-loading registration
+   pattern
+
+What to build:
+
+1. In src/features/auth/types/auth.types.ts, add is_staff: boolean to
+   AuthUser (matching Prompt 1's backend addition — confirm the exact
+   field name matches).
+
+2. Create src/shared/components/guards/RequireStaff.tsx:
+   export default function RequireStaff() {
+     const { user, isLoading } = useAuth();
+     if (isLoading) return <PageLoader />;
+     if (!user?.is_staff) return <Navigate to="/dashboard" replace />;
+     return <Outlet />;
+   }
+   (Byte-for-byte structural mirror of RequireRole.tsx, just checking
+   is_staff instead of role — do not add any extra logic here; this
+   guard exists purely for UX (hiding the admin UI from non-staff
+   users), never as the actual security boundary — every backend
+   endpoint independently enforces IsAdminUser regardless of what this
+   guard does, per this Phase's explicit architecture principle.)
+
+3. Create src/features/admin/components/AdminLayout.tsx: a layout with
+   a sidebar listing links to every planned admin section (Dashboard,
+   Users, Teacher Verification, Disputes, Payouts, Reviews, Content
+   (Pages/Articles), Contact, Audit Log), an <Outlet /> for the nested
+   route content, and a "back to main site" link. Reuse this project's
+   existing Sidebar/Button/layout primitives for visual consistency
+   rather than building new ones.
+
+4. Create thin placeholder page components for now (real
+   implementation comes in Prompts 9-15): 
+   src/features/admin/pages/AdminDashboardPage.tsx,
+   AdminUsersPage.tsx, AdminTeacherVerificationPage.tsx,
+   AdminDisputesPage.tsx, AdminPayoutsPage.tsx, AdminReviewsPage.tsx,
+   AdminContentPagesPage.tsx, AdminArticlesPage.tsx,
+   AdminContactPage.tsx, AdminAuditLogPage.tsx — each just rendering a
+   heading with the section name for now, e.g.
+   export default function AdminUsersPage() { return <h1>Users</h1>; }
+
+5. In lazyPages.ts, register lazy imports for AdminLayout and all ten
+   placeholder pages.
+
+6. In router.tsx, add a new top-level route:
+   {
+     path: "/admin",
+     element: <RequireStaff />,
+     children: [
+       {
+         element: <Suspense fallback={<PageLoader />}><AdminLayout /></Suspense>,
+         children: [
+           { index: true, element: <AdminDashboardPage /> },
+           { path: "users", element: <AdminUsersPage /> },
+           { path: "teachers/verification", element: <AdminTeacherVerificationPage /> },
+           { path: "payments/disputes", element: <AdminDisputesPage /> },
+           { path: "payments/payouts", element: <AdminPayoutsPage /> },
+           { path: "reviews", element: <AdminReviewsPage /> },
+           { path: "content/pages", element: <AdminContentPagesPage /> },
+           { path: "content/articles", element: <AdminArticlesPage /> },
+           { path: "contact", element: <AdminContactPage /> },
+           { path: "audit-log", element: <AdminAuditLogPage /> },
+         ],
+       },
+     ],
+   }
+   (Adjust the exact Suspense/wrapping structure to match this
+   project's established pattern for nested layouts, per your reading
+   of router.tsx in step 3 — this is illustrative, not necessarily the
+   literal final shape.)
+
+7. Add a small, conditionally-rendered "Admin" link somewhere in the
+   existing main Navbar (visible only when user?.is_staff is true),
+   linking to /admin — check Navbar.tsx's existing conditional-link
+   pattern (e.g. how a teacher-only or student-only link is already
+   shown conditionally, if any exist) and match it.
+
+Files affected:
+- src/features/auth/types/auth.types.ts
+- src/shared/components/guards/RequireStaff.tsx (new)
+- src/features/admin/components/AdminLayout.tsx (new)
+- src/features/admin/pages/*.tsx (10 new placeholder files)
+- src/app/routes/lazyPages.ts
+- src/app/routes/router.tsx
+- src/shared/components/layout/Navbar.tsx
+
+Then write tests:
+- RequireStaff.test.tsx: redirects a non-staff user, renders children
+  for a staff user, shows loading state while auth is loading
+- AdminLayout.test.tsx: renders the sidebar with all ten section links
 
 Acceptance Criteria:
 - npx vitest run passes the entire frontend test suite
 - npm run build succeeds
-- Manually running the dev server shows the page rendered
-  right-to-left with the Vazirmatn font applied
+- Manual check: logging in as a non-staff user and visiting /admin
+  redirects to /dashboard; logging in as staff shows the admin shell
+  with working navigation between all ten (currently placeholder)
+  sections
 
 Verification Steps:
 1. npx vitest run
 2. npm run build
-3. npm run dev, open the app in a browser, confirm (a) text direction
-   is RTL, (b) the font is Vazirmatn (check via browser devtools'
-   computed font-family), (c) no console errors about missing i18next
-   resources
+3. Manual check as described above
 4. git diff --stat
 ```
 
-### Prompt 2 — RTL: کامپوننت‌های پایهٔ `shared/components/ui`
+### Prompt 9 — فرانت‌اند: `Dashboard` و `Users`
 
 ```
-Goal: Convert every directional (LTR-hardcoded) Tailwind utility class
-in src/shared/components/ui/ (the shadcn-style base component library
-used throughout the entire app) to its logical-property equivalent, so
-every higher-level feature component that uses these primitives is
-automatically RTL-correct without further changes. No text translation
-in this prompt — pure CSS-class conversion.
+Goal: Implement the real AdminDashboardPage (stats cards) and
+AdminUsersPage (list with filters, activate/deactivate actions),
+replacing their Prompt 8 placeholders.
 
-Before starting:
-1. Run: grep -rln "ml-\|mr-\|pl-\|pr-\|left-\|right-\|text-left\|text-right\|border-l\|border-r\|rounded-l\|rounded-r\|space-x-" src/shared/components/ui/
-   and get the exact file list to work through.
-2. Read the Tailwind CSS documentation's logical properties utility
-   list (or infer from Tailwind's known utility-class naming: ml-N ->
-   ms-N, mr-N -> me-N, pl-N -> ps-N, pr-N -> pe-N, left-N -> start-N,
-   right-N -> end-N, text-left -> text-start, text-right -> text-end,
-   border-l -> border-s, border-r -> border-e, rounded-l -> rounded-s,
-   rounded-r -> rounded-e, space-x-N needs special handling — see
-   below) to build your exact mechanical mapping before editing files.
-3. Read src/shared/components/ui/dialog.tsx, dropdown-menu.tsx,
-   select.tsx, popover.tsx, sheet.tsx, tooltip.tsx in full — these wrap
-   Radix UI primitives, so check specifically whether any hardcoded
-   `side="left"`/`side="right"` or `align="start"/"end"` props (Radix's
-   own positioning props, separate from Tailwind classes) need
-   adjustment. Radix's `align="start"/"end"` values are already
-   direction-aware (they follow `dir` automatically per Radix's docs),
-   so these likely need NO change — but `side="left"`/`side="right"`
-   are NOT direction-aware in Radix (they're physical, not logical) and
-   DO need review: if a component hardcodes side="right" intending "the
-   side where it visually makes sense in LTR," that assumption may now
-   be wrong in RTL and should become side="end" if Radix supports it
-   for that primitive, or be explicitly reconsidered per-component.
+Before starting, read:
+1. apps/adminapi's dashboard and users endpoints (Prompts 1-2, backend)
+   for exact response shapes
+2. src/features/teachers/pages/BrowseTeachersPage.tsx — the closest
+   existing precedent for "a filterable, paginated admin-style list
+   page" to match structurally
+3. src/shared/components/ui/ (Card, Badge, Table or equivalent list
+   primitives, Button) — reuse these exactly, no new UI primitives
 
 What to build:
 
-For each file found in step 1:
-1. Replace every directional margin/padding/position/text-align/
-   border-radius/border-width utility with its logical equivalent per
-   the mapping above.
-2. For `space-x-N` (Tailwind's non-logical horizontal-spacing
-   shorthand, which has no direct RTL-safe equivalent in Tailwind 3
-   without a plugin): replace with explicit `gap-N` on a flex/grid
-   parent where the layout is already flex/grid (gap is direction-
-   agnostic and RTL-safe by default), which is almost always possible
-   for the kinds of layouts in a component library like this. If a
-   specific case genuinely can't be converted to gap (rare), leave a
-   comment explaining why and flag it in your final summary rather
-   than silently leaving a broken RTL case.
-3. For any Radix `side="left"`/`side="right"` found per your reading
-   above, evaluate case by case whether it should become "start"/"end"
-   (if that primitive's API supports logical sides — check each
-   component's actual Radix primitive docs/types) or needs a
-   dir-aware conditional (using the useLocale() hook from Prompt 1) if
-   the primitive genuinely only accepts physical sides. Document each
-   decision with a one-line comment at the call site.
+1. Create src/features/admin/api/admin.api.ts (the shared API client
+   for the whole admin feature, grown across this and later prompts):
+   export const adminApi = {
+     getDashboardStats(): Promise<AxiosResponse<DashboardStats>> { ... },
+     listUsers(params): Promise<AxiosResponse<PaginatedResponse<AdminUser>>> { ... },
+     getUser(id): Promise<AxiosResponse<AdminUser>> { ... },
+     activateUser(id): Promise<AxiosResponse<AdminUser>> { ... },
+     deactivateUser(id): Promise<AxiosResponse<AdminUser>> { ... },
+   };
+   (Match the exact URL paths from the backend Prompts 1-2.)
 
-Do NOT touch any text content, any component's exported API/props
-shape, or any file outside src/shared/components/ui/ in this prompt.
+2. Create src/features/admin/types/admin.types.ts with
+   DashboardStats, AdminUser interfaces matching the backend
+   serializers exactly.
 
-Files affected: exactly the list produced by step 1's grep (confirm
-the final list in your response).
+3. Implement AdminDashboardPage.tsx: four stat cards (pending
+   verifications, open disputes, pending payouts, flagged reviews),
+   each clickable, linking to the corresponding admin section
+   (/admin/teachers/verification?status=UNDER_REVIEW, etc.) — reuse
+   this project's existing Card component.
 
-Then run the existing component tests for this directory
-(npx vitest run src/shared/components/ui/) and fix any test that
-specifically asserted a physical class name (e.g. checking for
-"ml-2" in a className string) — update those assertions to the new
-logical class name; do not change what the test is actually verifying.
+4. Implement AdminUsersPage.tsx: a paginated table/list (role filter,
+   search box), each row showing email/full_name/role/is_active, with
+   an Activate/Deactivate button per row (calling the respective
+   mutation, with a confirmation dialog — reuse this project's
+   existing Dialog/AlertDialog component for the confirmation, matching
+   how a similarly consequential action elsewhere in this project, e.g.
+   suspending a teacher, already confirms before acting).
 
-Acceptance Criteria:
-- grep -rn "ml-[0-9]\|mr-[0-9]\|pl-[0-9]\|pr-[0-9]\|text-left\|text-right\|border-l-\|border-r-\|rounded-l-\|rounded-r-\|space-x-" src/shared/components/ui/
-  returns no results, except any explicitly documented/flagged
-  exceptions from step 3 above
-- npx vitest run src/shared/components/ui/ passes completely
-- npm run build succeeds
-
-Verification Steps:
-1. grep -rn "ml-[0-9]\|mr-[0-9]\|pl-[0-9]\|pr-[0-9]\|text-left\|text-right\|border-l-\|border-r-\|rounded-l-\|rounded-r-\|space-x-" src/shared/components/ui/
-2. npx vitest run src/shared/components/ui/
-3. npm run build
-4. Manual check: run the dev server (with dir="rtl" already active
-   from Prompt 1), open a page using Dialog/DropdownMenu/Select (check
-   router.tsx for a page that uses one, e.g. a form page), and confirm
-   it opens/aligns correctly in RTL, not mirrored incorrectly
-5. git diff --stat
-```
-
-### Prompt 3 — RTL: Layout، Navigation، و کامپوننت‌های `feedback`/`guards`
-
-```
-Goal: Fix RTL for the app's structural layout components (Navbar,
-Sidebar, Footer, AppLayout, DashboardLayout, Breadcrumbs) and the
-feedback/guard components, including any icon-direction issues
-(e.g. a "next" chevron that must visually point the opposite way in
-RTL).
-
-Before starting:
-1. Run: grep -rln "ml-\|mr-\|pl-\|pr-\|left-\|right-\|text-left\|text-right\|border-l\|border-r\|rounded-l\|rounded-r\|space-x-" src/shared/components/layout/ src/shared/components/feedback/ src/shared/components/guards/
-2. Read src/shared/components/layout/Navbar.tsx, Sidebar.tsx,
-   Breadcrumbs.tsx in full — these are the highest-risk files for
-   directional icons (a breadcrumb separator chevron, a sidebar
-   collapse/expand arrow, a "back" button)
-3. grep -rn "ChevronRight\|ChevronLeft\|ArrowRight\|ArrowLeft" src/shared/components/
-   to find every directional icon import from lucide-react in this
-   scope — each one needs manual review: does this icon represent a
-   PHYSICAL direction (e.g. a literal left-pointing arrow in a diagram)
-   or a LOGICAL direction (e.g. "next"/"forward" in a breadcrumb or
-   pagination, which must flip in RTL since "forward" now points
-   visually left)? Only the logical ones need to change.
-
-What to build:
-
-1. Apply the same mechanical logical-class conversion from Prompt 2's
-   mapping to every file found in step 1.
-
-2. For every logical-direction icon found in step 3 (e.g. a breadcrumb
-   separator that's currently always ChevronRight, or a "next page"
-   icon), make it direction-aware: import useLocale from Prompt 1 (or,
-   simpler, since dir is currently always "rtl" for the whole app, you
-   could hardcode the RTL-correct icon directly — but prefer the
-   direction-aware approach using useLocale()'s dir value with a
-   conditional, e.g. dir === "rtl" ? ChevronLeft : ChevronRight, since
-   this keeps the component correct if a second locale/LTR mode is
-   ever added later, matching this Phase's stated "structured for
-   future multi-locale, not building the toggle now" design principle
-   from the architecture doc).
-
-3. Specifically review Sidebar.tsx and Navbar.tsx for any layout that
-   assumes a fixed physical side (e.g. "sidebar is always on the
-   left," a common LTR assumption) — in RTL, a sidebar conventionally
-   moves to the right. Check how this project's Sidebar is currently
-   positioned (a fixed left offset via Tailwind classes, or flex
-   ordering) and correct it to use logical start/end so it correctly
-   appears on the right in RTL without any special-casing beyond the
-   logical-class conversion already done.
-
-4. Review Breadcrumbs.tsx's separator rendering logic specifically —
-   confirm the separator icon direction is now correct per step 2, and
-   confirm the breadcrumb items themselves read in the correct visual
-   order for RTL reading (this should happen automatically from
-   dir="rtl" plus a flex layout with no hardcoded flex-direction, but
-   verify this isn't overridden by an explicit flex-row that would need
-   to become direction-agnostic).
-
-Files affected: the list from step 1, plus any file with a directional
-icon identified in step 3.
-
-Then run the relevant existing tests and fix any broken assertions,
-following the same principle as Prompt 2 (fix the assertion to match
-the new correct behavior, don't change what's being tested).
-
-Acceptance Criteria:
-- grep -rn "ml-[0-9]\|mr-[0-9]\|pl-[0-9]\|pr-[0-9]\|text-left\|text-right\|border-l-\|border-r-\|rounded-l-\|rounded-r-\|space-x-" src/shared/components/layout/ src/shared/components/feedback/ src/shared/components/guards/
-  returns no results
-- npx vitest run passes for these directories
-- npm run build succeeds
-
-Verification Steps:
-1. grep -rn "ml-[0-9]\|mr-[0-9]\|pl-[0-9]\|pr-[0-9]\|text-left\|text-right\|border-l-\|border-r-\|rounded-l-\|rounded-r-\|space-x-" src/shared/components/layout/ src/shared/components/feedback/ src/shared/components/guards/
-2. npx vitest run src/shared/components/
-3. npm run build
-4. Manual visual check: run the dev server, confirm the Sidebar (if
-   present on any page) renders on the right, the breadcrumb separator
-   points the correct direction, and the Navbar's items read
-   right-to-left correctly
-5. git diff --stat
-```
-
-### Prompt 4 — فارسی‌سازی + RTL: دامنهٔ Auth
-
-```
-Goal: Translate all user-visible text in the auth feature
-(login/register/forgot-password/reset-password/verify-email) to
-Persian via i18next, add Persian Zod validation messages, and fix any
-remaining directional Tailwind classes specific to this feature's own
-components (beyond what Prompts 2-3 already fixed in shared
-components).
-
-Before starting, read these files completely:
-1. Every file under src/features/auth/ (pages and any
-   feature-specific components) — the full current English copy and
-   Zod schemas in each
-2. src/shared/i18n/index.ts (from Prompt 1) — to see the exact
-   namespace-registration pattern for adding a new "auth" namespace
-3. src/app/providers/useLocale.ts / useTranslation usage pattern
-   established in Prompt 1
-
-What to build:
-
-1. Create src/shared/i18n/locales/fa/auth.json with keys for every
-   piece of user-visible text in this feature: page titles, labels,
-   placeholders, button text, validation error messages, success/error
-   toast messages, links ("Don't have an account? Register", etc.).
-   Organize keys by page for readability, e.g.:
-   {
-     "login": { "title": "...", "emailLabel": "...", "passwordLabel": "...", "submit": "...", "noAccount": "..." },
-     "register": { ... },
-     "forgotPassword": { ... },
-     "resetPassword": { ... },
-     "verifyEmail": { ... },
-     "validation": { "emailRequired": "...", "emailInvalid": "...", "passwordMinLength": "...", "passwordsDoNotMatch": "..." }
-   }
-
-2. Register the "auth" namespace in src/shared/i18n/index.ts's
-   resources/ns config (extending, not replacing, the existing
-   "common" registration from Prompt 1).
-
-3. In every page/component under src/features/auth/:
-   - Replace every hardcoded English string in JSX with
-     t("auth:login.title") style calls via useTranslation("auth")
-     (or however this project's i18next setup expects namespaced key
-     access — confirm the exact calling convention against your
-     Prompt 1 config)
-   - Update every Zod schema's .min()/.email()/.refine() error message
-     strings to pull from the same translation keys (e.g.
-     z.string().email(t("auth:validation.emailInvalid"))) — note that
-     Zod schemas are often defined outside the component's render
-     scope (e.g. module-level), which won't have access to a
-     component-scoped t() from useTranslation; if that's the case
-     here, either (a) move schema definition inside the component/a
-     hook so it can call useTranslation, or (b) use i18next's
-     standalone t function (imported directly from the i18next
-     instance in Prompt 1, not the React hook) for schemas defined at
-     module scope — check how each file in this feature currently
-     defines its schema (inside vs outside the component) and use
-     whichever approach fits without restructuring the component
-     unnecessarily
-   - Reuse t("common:actions.save")-style calls from the "common"
-     namespace (Prompt 1) wherever a generic action button already
-     has a common-namespace equivalent (e.g. a generic "Cancel"
-     button), rather than duplicating that string into auth.json
-
-4. grep -rln "ml-\|mr-\|pl-\|pr-\|left-\|right-\|text-left\|text-right"
-   src/features/auth/ and fix any remaining directional classes local
-   to this feature's own JSX (not already covered by Prompts 2-3's
-   shared-component fixes).
+5. Add the "admin" i18n namespace: src/shared/i18n/locales/fa/admin.json
+   with keys for this prompt's two pages (register the namespace in
+   src/shared/i18n/index.ts).
 
 Files affected:
-- src/shared/i18n/locales/fa/auth.json (new)
-- src/shared/i18n/index.ts (namespace registration)
-- every file under src/features/auth/pages/ and any
-  src/features/auth/components/
-
-Then update every existing test in src/features/auth/**/__tests__/:
-replace any getByText("English string") query with either
-getByRole(...) (preferred, per this Phase's testing-quality
-improvement goal noted in the architecture doc) or
-getByText(/فارسی متن مربوطه/) matching the new Persian copy — prefer
-role-based queries wherever the test doesn't specifically need to
-assert exact copy, and reserve text-based queries for tests that are
-actually about verifying specific message content (e.g. confirming a
-validation error shows the right message).
-
-Acceptance Criteria:
-- grep -rn "ml-[0-9]\|mr-[0-9]\|pl-[0-9]\|pr-[0-9]\|text-left\|text-right" src/features/auth/
-  returns no results
-- No hardcoded English JSX string remains in src/features/auth/ (spot
-  check manually — this is hard to grep reliably, so do a careful
-  read-through of every file after editing)
-- npx vitest run src/features/auth/ passes completely
-- npm run build succeeds
-
-Verification Steps:
-1. grep -rn "ml-[0-9]\|mr-[0-9]\|pl-[0-9]\|pr-[0-9]\|text-left\|text-right" src/features/auth/
-2. npx vitest run src/features/auth/
-3. npm run build
-4. Manual check: run the dev server, visit /login, /register,
-   /forgot-password — confirm all text is Persian and the layout reads
-   correctly right-to-left
-5. git diff --stat
-```
-
-### Prompt 5 — فارسی‌سازی + RTL: دامنهٔ Teachers (Marketplace، Dashboard، Verification، Payout)
-
-```
-Goal: Translate all user-visible text in the teachers feature — the
-largest and most feature-rich domain in this project, spanning the
-public marketplace listing/profile, the teacher dashboard, the Phase 1
-payout-account UI, and the Phase 2 verification UI — and fix any
-remaining directional classes local to this feature.
-
-Before starting:
-1. Read every file under src/features/teachers/pages/ and
-   src/features/teachers/components/ in full
-2. Read src/shared/i18n/locales/fa/auth.json and index.ts (from
-   Prompt 4) for the established namespace/key-organization convention
-   to follow consistently
-
-What to build:
-
-1. Create src/shared/i18n/locales/fa/teachers.json, organized by
-   page/component (marketplace list, teacher card, public profile,
-   dashboard, verification status banner + submission form, payout
-   account banner + form), covering every piece of user-visible text:
-   labels, empty states ("No teachers found"), button text, status
-   labels (PENDING/UNDER_REVIEW/APPROVED/REJECTED/SUSPENDED — these
-   enum values from Phase 2's backend need a Persian display-label
-   mapping, e.g. { "status": { "PENDING": "در انتظار بررسی",
-   "UNDER_REVIEW": "در حال بررسی", "APPROVED": "تأیید شده",
-   "REJECTED": "رد شده", "SUSPENDED": "معلق شده" } }), validation
-   messages for the payout-account shaba-number form and the
-   verification-document upload form.
-
-2. Register the "teachers" namespace in src/shared/i18n/index.ts.
-
-3. Apply t("teachers:...") translation across every file under
-   src/features/teachers/, following Prompt 4's exact same approach
-   (useTranslation hook, module-scope Zod schemas using the standalone
-   t function where needed).
-
-4. Specifically for status-enum display (verification status, and any
-   other enum-like value rendered as a badge/label): build a small
-   shared helper (e.g. src/features/teachers/lib/statusLabels.ts) that
-   maps the raw API enum string to its translated label via the
-   status.* keys from step 1, and use this helper everywhere a status
-   is displayed (VerificationStatusBanner, any admin-facing status
-   list if present) — rather than inlining a switch/ternary per
-   component, so there's exactly one place that needs updating if a
-   status enum value's label copy changes.
-
-5. grep -rln "ml-\|mr-\|pl-\|pr-\|left-\|right-\|text-left\|text-right"
-   src/features/teachers/ and fix any remaining directional classes.
-
-6. Review any star-rating or numeric-badge display (e.g.
-   average_rating "(23 reviews)" text from Phase 3's
-   TeacherPublicProfilePage) and translate its surrounding copy
-   (e.g. "{{count}} reviews" -> a Persian pluralized string — use
-   i18next's built-in pluralization support, i18next-icu-style, or
-   i18next's default count-based key suffixing (_one/_other, though
-   Persian doesn't distinguish singular/plural the way English does —
-   check i18next's Persian plural rule support; if i18next doesn't
-   have a built-in CLDR plural rule for "fa", a single count-agnostic
-   phrasing like "{{count}} نظر" is linguistically correct for Persian
-   anyway, since Persian doesn't pluralize nouns after numbers the way
-   English does — use this simpler correct-for-Persian phrasing rather
-   than forcing an English-style plural/singular split that Persian
-   grammar doesn't need).
-
-Files affected:
-- src/shared/i18n/locales/fa/teachers.json (new)
+- src/features/admin/api/admin.api.ts (new)
+- src/features/admin/types/admin.types.ts (new)
+- src/features/admin/pages/AdminDashboardPage.tsx (replacing placeholder)
+- src/features/admin/pages/AdminUsersPage.tsx (replacing placeholder)
+- src/shared/i18n/locales/fa/admin.json (new)
 - src/shared/i18n/index.ts
-- src/features/teachers/lib/statusLabels.ts (new)
-- every file under src/features/teachers/pages/ and
-  src/features/teachers/components/
+- src/test/mocks/handlers/admin.handlers.ts (new, growing across this
+  and later prompts)
 
-Then update every existing test under src/features/teachers/, following
-the exact same role-based-query-preferred approach from Prompt 4.
-
-Acceptance Criteria:
-- grep -rn "ml-[0-9]\|mr-[0-9]\|pl-[0-9]\|pr-[0-9]\|text-left\|text-right" src/features/teachers/
-  returns no results
-- No hardcoded English JSX string remains (manual read-through
-  confirmation)
-- npx vitest run src/features/teachers/ passes completely
-- npm run build succeeds
-
-Verification Steps:
-1. grep -rn "ml-[0-9]\|mr-[0-9]\|pl-[0-9]\|pr-[0-9]\|text-left\|text-right" src/features/teachers/
-2. npx vitest run src/features/teachers/
-3. npm run build
-4. Manual check: visit the teacher marketplace list, a public teacher
-   profile, the teacher dashboard, the verification page, and the
-   payout-account page — confirm all text is Persian and status badges
-   show translated labels
-5. git diff --stat
-```
-
-### Prompt 6 — فارسی‌سازی + RTL: دامنه‌های Bookings و Payments
-
-```
-Goal: Translate all user-visible text in the bookings and payments
-features, including the Phase 1 checkout/callback flow, and fix
-remaining directional classes in both.
-
-Before starting, read every file under src/features/bookings/ and
-src/features/payments/ in full, plus
-src/shared/i18n/locales/fa/teachers.json (from Prompt 5) as the
-continued example of the established convention.
-
-What to build:
-
-1. Create src/shared/i18n/locales/fa/bookings.json and
-   src/shared/i18n/locales/fa/payments.json (two separate namespaces,
-   matching the app-level domain split), covering:
-   - Booking request form (skill selection, date/time selection labels
-     — NOT the actual calendar rendering, which is Phase 6's concern;
-     just the surrounding form labels/buttons)
-   - Booking status labels (PENDING_PAYMENT, AWAITING_TEACHER_REVIEW,
-     ACCEPTED, REJECTED, CANCELLED, COMPLETED, etc. — build a
-     statusLabels.ts helper for bookings mirroring Prompt 5's pattern
-     exactly)
-   - Payment status labels (PENDING, HELD_IN_ESCROW, RELEASED, FAILED,
-     REFUNDED, DISPUTED — same helper pattern)
-   - The BookingPaymentPage's "Pay" button and loading/redirect states
-     from Phase 1
-   - PaymentCallbackPage's success/failure messages from Phase 1
-   - PaymentCard, PaymentSummary, TeacherPaymentSummary display labels
-   - DisputeDialog's form labels and validation messages (found via
-     the earlier zod-schema grep)
-
-2. Register both namespaces in src/shared/i18n/index.ts.
-
-3. Apply translation across every file in both features, following the
-   established pattern from Prompts 4-5 exactly (useTranslation hook,
-   standalone t for module-scope schemas, status-label helper
-   functions rather than inline switches).
-
-4. Money display check: confirm src/shared/lib/money.ts's formatToman
-   (from Phase 0) is being used consistently across all payment/
-   booking price displays in these two features — if any file still
-   shows a raw number without the Toman formatter (a regression risk
-   worth checking now that you're touching every file in this domain
-   anyway), fix it and note this finding explicitly in your summary
-   even though it's technically a Phase 0 concern, since you're already
-   reviewing every relevant file here.
-
-5. grep -rln "ml-\|mr-\|pl-\|pr-\|left-\|right-\|text-left\|text-right"
-   src/features/bookings/ src/features/payments/ and fix remaining
-   directional classes.
-
-Files affected:
-- src/shared/i18n/locales/fa/bookings.json (new)
-- src/shared/i18n/locales/fa/payments.json (new)
-- src/shared/i18n/index.ts
-- src/features/bookings/lib/statusLabels.ts (new)
-- src/features/payments/lib/statusLabels.ts (new)
-- every file under src/features/bookings/ and src/features/payments/
-
-Then update every existing test under both feature directories,
-following the established role-based-query-preferred convention.
+Then write tests for both pages (rendering, filtering, and the
+activate/deactivate mutation flow with confirmation dialog).
 
 Acceptance Criteria:
-- grep -rn "ml-[0-9]\|mr-[0-9]\|pl-[0-9]\|pr-[0-9]\|text-left\|text-right" src/features/bookings/ src/features/payments/
-  returns no results
-- No hardcoded English JSX string remains in either feature
-- npx vitest run src/features/bookings/ src/features/payments/ passes
-  completely
-- npm run build succeeds
-- Every price display in these two features uses formatToman
-  consistently (report any fix made here explicitly)
-
-Verification Steps:
-1. grep -rn "ml-[0-9]\|mr-[0-9]\|pl-[0-9]\|pr-[0-9]\|text-left\|text-right" src/features/bookings/ src/features/payments/
-2. npx vitest run src/features/bookings/ src/features/payments/
-3. npm run build
-4. Manual check: walk through creating a booking, reaching the
-   checkout page, and viewing a payment card — confirm all text is
-   Persian, prices show as Toman, status badges are translated
-5. git diff --stat
-```
-
-### Prompt 7 — فارسی‌سازی + RTL: دامنه‌های Sessions و Reviews
-
-```
-Goal: Translate all user-visible text in the sessions and reviews
-features (including Phase 3's review submission/display UI), and fix
-remaining directional classes in both.
-
-Before starting, read every file under src/features/sessions/ and
-src/features/reviews/ in full.
-
-What to build:
-
-1. Create src/shared/i18n/locales/fa/sessions.json and
-   src/shared/i18n/locales/fa/reviews.json, covering:
-   - Session status/outcome labels (SCHEDULED, ONGOING, COMPLETED,
-     CANCELLED; outcome COMPLETED/NO_SHOW_TEACHER/NO_SHOW_STUDENT) —
-     another statusLabels.ts helper, matching the established pattern
-   - The "Leave a Review" call-to-action copy (from Phase 3)
-   - SubmitReviewForm's labels and validation messages (e.g. "Please
-     select a rating" for a missing star selection)
-   - ReviewCard's relative-date and rating display copy
-   - ReviewList's empty state ("No reviews yet")
-   - Any no-show reporting UI text, if present in this feature
-
-2. Register both namespaces in src/shared/i18n/index.ts.
-
-3. Apply translation across every file in both features, following the
-   exact established pattern from previous prompts.
-
-4. Star rating text: ensure any numeric rating display (e.g. "4.8 out
-   of 5") uses Persian-appropriate phrasing, and confirm number
-   formatting for the rating value itself uses a locale-aware format
-   consistent with this Phase's approach (Intl.NumberFormat("fa-IR")
-   or i18next's built-in number formatting — check what Prompt 6 used
-   for consistency and match it here, rather than introducing a third
-   formatting approach).
-
-5. grep -rln "ml-\|mr-\|pl-\|pr-\|left-\|right-\|text-left\|text-right"
-   src/features/sessions/ src/features/reviews/ and fix remaining
-   directional classes.
-
-Files affected:
-- src/shared/i18n/locales/fa/sessions.json (new)
-- src/shared/i18n/locales/fa/reviews.json (new)
-- src/shared/i18n/index.ts
-- src/features/sessions/lib/statusLabels.ts (new)
-- every file under src/features/sessions/ and src/features/reviews/
-
-Then update every existing test under both feature directories,
-following the established convention.
-
-Acceptance Criteria:
-- grep -rn "ml-[0-9]\|mr-[0-9]\|pl-[0-9]\|pr-[0-9]\|text-left\|text-right" src/features/sessions/ src/features/reviews/
-  returns no results
-- No hardcoded English JSX string remains in either feature
-- npx vitest run src/features/sessions/ src/features/reviews/ passes
-  completely
-- npm run build succeeds
-
-Verification Steps:
-1. grep -rn "ml-[0-9]\|mr-[0-9]\|pl-[0-9]\|pr-[0-9]\|text-left\|text-right" src/features/sessions/ src/features/reviews/
-2. npx vitest run src/features/sessions/ src/features/reviews/
-3. npm run build
-4. Manual check: visit a session detail page and the review submission
-   flow — confirm all text is Persian
-5. git diff --stat
-```
-
-### Prompt 8 — فارسی‌سازی + RTL: Students، Profile، Notifications، Landing، و باقیماندهٔ Shared
-
-```
-Goal: Translate all remaining user-visible text across the students,
-profile, notifications, and landing features, plus any remaining
-top-level shared pages (error pages, empty states, etc.), and fix any
-remaining directional classes anywhere left untouched by Prompts 2-7.
-
-Before starting:
-1. Read every file under src/features/students/, src/features/profile/,
-   src/features/notifications/, src/features/landing/, and
-   src/shared/pages/ in full
-2. Run a comprehensive grep across the ENTIRE src/features and
-   src/shared trees (not just these four features) for any remaining
-   directional classes, since this is the last prompt with dedicated
-   scope before Prompt 9's final audit:
-   grep -rln "ml-\|mr-\|pl-\|pr-\|left-\|right-\|text-left\|text-right\|space-x-" src/features/ src/shared/
-
-What to build:
-
-1. Create src/shared/i18n/locales/fa/students.json,
-   src/shared/i18n/locales/fa/profile.json,
-   src/shared/i18n/locales/fa/notifications.json,
-   src/shared/i18n/locales/fa/landing.json, covering every piece of
-   user-visible text in their respective features (profile edit form
-   labels/validation, change-password form, notification list items
-   and empty state, landing page hero/marketing copy, students feature
-   pages).
-
-2. Register all four namespaces in src/shared/i18n/index.ts.
-
-3. Apply translation across every file in these four features,
-   following the exact established pattern.
-
-4. For any remaining shared/top-level page (e.g. a 404 page, a generic
-   error page, ErrorFallback.tsx) not yet translated, add its copy to
-   common.json (from Prompt 1) since these are truly app-wide, not
-   feature-specific.
-
-5. Fix every remaining directional class found by step 2's
-   comprehensive grep, across the ENTIRE src tree — this prompt is
-   responsible for catching anything Prompts 2-7 missed in their
-   feature-scoped passes, in addition to this prompt's own four
-   features.
-
-Files affected:
-- src/shared/i18n/locales/fa/students.json, profile.json,
-  notifications.json, landing.json (new)
-- src/shared/i18n/locales/fa/common.json (extended, for shared
-  top-level pages)
-- src/shared/i18n/index.ts
-- every file under the four features listed, plus any leftover file
-  identified by step 2's project-wide grep
-
-Then update every remaining test with hardcoded English assertions,
-following the established convention, across whatever files this
-prompt touches.
-
-Acceptance Criteria:
-- grep -rn "ml-[0-9]\|mr-[0-9]\|pl-[0-9]\|pr-[0-9]\|text-left\|text-right\|space-x-" src/features/ src/shared/
-  returns no results anywhere in the project (this is the last
-  feature-scoped prompt, so this must be fully clean before Prompt 9)
-- No hardcoded English JSX string remains anywhere in these four
-  features
 - npx vitest run passes the entire frontend test suite
 - npm run build succeeds
 
 Verification Steps:
-1. grep -rn "ml-[0-9]\|mr-[0-9]\|pl-[0-9]\|pr-[0-9]\|text-left\|text-right\|space-x-" src/features/ src/shared/
-2. npx vitest run
-3. npm run build
-4. Manual check: visit the landing page, profile page, and
-   notifications list — confirm all text is Persian
-5. git diff --stat
+1. npx vitest run
+2. npm run build
+3. Manual check against a running backend
+4. git diff --stat
 ```
 
-### Prompt 9 — لایهٔ نگاشت کد خطای Backend به پیام فارسی
+### Prompt 10 — فرانت‌اند: `Teacher Verification` Review
 
 ```
-Goal: Build a mapping layer that translates known backend
-ApplicationError `code` values (established across Phases 1-4's
-services.py functions) into Persian user-facing messages, and wire it
-into wherever this project currently surfaces API error messages to
-the user (toasts, inline form errors).
+Goal: Implement the real AdminTeacherVerificationPage: a list
+(filterable by status) plus a detail/review view showing submitted
+documents with approve/reject/suspend/unsuspend actions.
 
-Before starting, read these files completely:
-1. src/shared/api/axios.instance.ts — the full file, to see the
-   current error-handling/interceptor structure and where a response
-   error's body is currently accessed
-2. Search across src/features/ for how a failed mutation's error is
-   currently displayed to the user (grep -rn "onError\|isError\|error.message"
-   src/features/ — look for the dominant pattern: is it a toast
-   library call like sonner's toast.error(...), an inline form field
-   error, or both, and where does the error text currently come from —
-   likely directly from the API's raw English error message)
-3. Compile (from your own reading of every services.py file across
-   Phases 1-4 covered in this project, or by grepping the backend if
-   it's accessible: grep -rn 'code="' afra-backend/apps/*/services.py)
-   the complete list of ApplicationError code values currently defined
-   across the project. This is the authoritative list this prompt's
-   mapping must cover — do not guess at codes that don't actually
-   exist in the backend.
+Before starting, read:
+1. apps/adminapi's teachers endpoints (Prompt 3, backend) for exact
+   response shapes, including nested documents
+2. src/features/teachers/pages/TeacherVerificationPage.tsx (the
+   teacher's own self-service submission page, from the previous
+   roadmap's Phase 2) — for the existing status-label
+   translation/badge pattern (statusLabels.ts helper) to reuse, not
+   reinvent
+3. src/features/teachers/lib/statusLabels.ts — reuse this exact helper
+   for displaying verification status badges in the admin view too
 
 What to build:
 
-1. Create src/shared/i18n/locales/fa/errors.json with a flat
-   code-to-message map covering every ApplicationError code found in
-   your backend search, e.g.:
-   {
-     "gateway_refund_failed": "بازپرداخت با خطا مواجه شد. لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.",
-     "invalid_verification_status": "این عملیات در وضعیت فعلی مدرس مجاز نیست.",
-     "review_window_expired": "مهلت ثبت نظر برای این جلسه به پایان رسیده است.",
-     "session_not_reviewable": "این جلسه هنوز قابل نظردهی نیست.",
-     "group_review_not_supported": "ثبت نظر برای جلسات گروهی هنوز پشتیبانی نمی‌شود.",
-     "payout_account_not_ready": "حساب بانکی مدرس هنوز تأیید نشده است.",
-     ... (continue for every code found)
-   }
-   Also add a "generic" fallback key (reuse common.json's existing
-   "errors.generic" from Prompt 1 rather than duplicating it here) for
-   any code not present in this map.
+1. Extend admin.api.ts with listTeacherVerifications, getVerification,
+   approveVerification, rejectVerification (with reason),
+   suspendVerification (with reason), unsuspendVerification.
 
-2. Register the "errors" namespace in src/shared/i18n/index.ts.
+2. Implement AdminTeacherVerificationPage.tsx as a list view: status
+   filter tabs/select (PENDING/UNDER_REVIEW/APPROVED/REJECTED/
+   SUSPENDED), each row showing teacher name/email, status badge
+   (reusing statusLabels.ts), submitted_at, linking to a detail view.
 
-3. Create src/shared/lib/apiErrorMessage.ts:
-   export function getApiErrorMessage(error: unknown): string {
-     // Extract the backend's error `code` field from an AxiosError's
-     // response body (confirm the exact shape the backend actually
-     // returns — check a real error response shape from any existing
-     // test's mock fixtures, e.g. src/test/mocks/handlers/*.ts for an
-     // error-case handler, to get the precise field name/nesting
-     // right rather than guessing)
-     // If a code is found and has a mapped translation in errors.json,
-     // return i18next.t(`errors:${code}`)
-     // Otherwise, return the generic fallback message
-   }
-   This function must not throw — any unexpected error shape (network
-   error, non-Axios error, malformed response) should safely fall
-   through to the generic fallback message rather than crashing the
-   error-display path itself.
+3. Build a detail sub-view (either a separate route
+   /admin/teachers/verification/:id or an expandable row/modal — match
+   whichever pattern this project's other "list + detail action" admin
+   flows use, or default to a separate route for a cleaner URL/
+   shareable-link UX) showing: teacher info, each submitted document
+   (as a viewable/downloadable link, per TeacherDocument's file field),
+   rejection_reason/suspension_reason if present, and action buttons:
+   - UNDER_REVIEW: Approve, Reject (reject opens a small form requiring
+     a reason, matching this project's established
+     react-hook-form+Zod pattern for any form requiring free-text
+     input, e.g. SubmitReviewForm)
+   - APPROVED: Suspend (with reason)
+   - SUSPENDED: Unsuspend
+   - PENDING: no actions available (nothing submitted yet to review)
 
-4. Wire getApiErrorMessage into wherever this project currently
-   displays API errors (identified in your reading of step 2) —
-   replace direct usage of error.message or error.response.data.detail
-   (or whatever the current raw-message access pattern is) with
-   getApiErrorMessage(error) at each of those call sites. Do this
-   consistently across every feature that currently shows raw backend
-   error text, not just a couple of examples — this is a project-wide
-   sweep, similar in spirit to the directional-class sweeps in
-   Prompts 2-8, but for error-message display instead of CSS classes.
+4. Add corresponding i18n keys to admin.json.
 
 Files affected:
-- src/shared/i18n/locales/fa/errors.json (new)
-- src/shared/i18n/index.ts
-- src/shared/lib/apiErrorMessage.ts (new)
-- every file identified in step 2/4 that currently displays a raw
-  backend error message (exact list depends on your findings — report
-  it in your final summary)
+- src/features/admin/api/admin.api.ts
+- src/features/admin/types/admin.types.ts
+- src/features/admin/pages/AdminTeacherVerificationPage.tsx (replacing
+  placeholder)
+- src/features/admin/pages/AdminTeacherVerificationDetailPage.tsx (new,
+  if a separate route was chosen)
+- src/app/routes/lazyPages.ts, router.tsx (only if a new detail route
+  was added)
+- src/shared/i18n/locales/fa/admin.json
+- src/test/mocks/handlers/admin.handlers.ts
 
-Then write tests:
-- src/shared/lib/__tests__/apiErrorMessage.test.ts: a known code maps
-  to its Persian message; an unknown code falls back to the generic
-  message; a malformed/non-Axios error also falls back gracefully
-  without throwing
-- Update at least 2-3 existing feature tests (spot-checking, not
-  necessarily every single call site) that specifically test an
-  error-display path, to confirm they now show the mapped Persian
-  message instead of a raw backend string
+Then write tests covering list filtering, detail rendering with
+documents, and each of the four action flows (happy path + a mocked
+backend error showing the correct message via getApiErrorMessage).
 
 Acceptance Criteria:
-- pytest (backend, read-only verification — no backend changes made in
-  this prompt) confirms the code list gathered in your investigation
-  is accurate (no backend changes needed, this is just a
-  cross-reference check)
-- npx vitest run src/shared/lib/__tests__/apiErrorMessage.test.ts
-  passes completely
-- npx vitest run (full suite) passes
+- npx vitest run passes the entire frontend test suite
 - npm run build succeeds
 
 Verification Steps:
-1. npx vitest run src/shared/lib/__tests__/apiErrorMessage.test.ts
-2. npx vitest run
-3. npm run build
-4. grep -rn "error.response.data\|error.message" src/features/
-   (review remaining matches — confirm each one is either already
-   routed through getApiErrorMessage or is a legitimately different
-   concern, e.g. logging rather than user-facing display; report
-   findings)
-5. git diff --stat
+1. npx vitest run
+2. npm run build
+3. Manual check against a running backend: approve/reject/suspend a
+   real teacher verification through the new UI
+4. git diff --stat
 ```
 
-### Prompt 10 — بررسی نهایی جامع: کلیدهای گم‌شده، RTL باقیمانده، و تست End-to-End
+### Prompt 11 — فرانت‌اند: `Disputes` و `Payouts`
 
 ```
-Goal: Final comprehensive audit of this entire Phase — detect any
-missing translation keys, confirm zero remaining directional Tailwind
-classes anywhere in the project, and add an automated check that
-prevents future regressions of both.
+Goal: Implement the real AdminDisputesPage and AdminPayoutsPage.
 
-Before starting, review the diffs from Prompts 1-9 for the full
-picture of this Phase's changes.
+Before starting, read:
+1. apps/adminapi's payments endpoints (Prompt 4, backend) for exact
+   response/input shapes (especially ResolveDisputeInputSerializer's
+   real fields, confirmed against DisputeResolutionForm)
+2. src/features/payments/lib/statusLabels.ts (from the previous
+   roadmap's Phase 5) — reuse for payment/dispute status badges
 
 What to build:
 
-1. Project-wide final grep (must return zero results anywhere in
-   src/, not just the features covered by name in earlier prompts):
-   grep -rn "ml-[0-9]\|mr-[0-9]\|pl-[0-9]\|pr-[0-9]\|left-[0-9]\|right-[0-9]\|text-left\|text-right\|border-l-\|border-r-\|rounded-l-\|rounded-r-\|space-x-" src/
-   Fix anything still found.
+1. Extend admin.api.ts with listDisputes, resolveDispute, listPayouts,
+   markPayoutTransferred.
 
-2. Missing-translation-key detection: configure i18next's built-in
-   missing-key handling (the `saveMissing` + a custom `missingKeyHandler`
-   option, or i18next's `parseMissingKeyHandler`) to, in development/
-   test mode only, throw or console.error loudly when a component
-   requests a key that doesn't exist in fa's resources — rather than
-   i18next's default behavior of silently rendering the raw key
-   string. Wire this into the Vitest test setup (e.g.
-   src/test/setup.ts, if that's where global test configuration
-   lives) so that ANY test rendering a component with a missing
-   translation key causes that test to fail loudly, rather than
-   passing with visibly-broken output that a human reviewer might miss
-   in a snapshot.
+2. AdminDisputesPage.tsx: list (status filter), each row showing
+   payment amount (via formatToman from this project's established
+   Phase 0 money-formatting utility — never a raw number), opened_by,
+   created_at; a "Resolve" action opening a form matching
+   ResolveDisputeInputSerializer's exact real fields (built with
+   react-hook-form + Zod, consistent with every other form in this
+   project).
 
-3. With the missing-key detection from step 2 now active, run the full
-   test suite:
-   npx vitest run
-   and fix every newly-surfaced missing-key failure (these are real
-   gaps left by Prompts 4-8 — a key referenced in a component but
-   never added to the corresponding namespace JSON file). This is the
-   step most likely to surface concrete, previously-invisible bugs
-   from this Phase's large surface area.
+3. AdminPayoutsPage.tsx: list (payout_status filter), each row showing
+   teacher, payout_amount (formatToman), status; a "Mark as
+   Transferred" action opening a small form for
+   bank_reference_number, with a confirmation step (this moves real
+   money bookkeeping state — treat it with the same care as the
+   teacher-verification actions' confirmation dialogs).
 
-4. Add one end-to-end smoke test (using this project's existing
-   integration-test setup, if src/test/integration/ has established
-   conventions — check there first) that renders the full app shell
-   (App.tsx with all providers) and confirms: document.documentElement.dir
-   === "rtl", at least one piece of known Persian text (e.g. a Navbar
-   label) renders correctly, and no console errors/warnings about
-   missing translation keys occur during this render.
-
-5. Final documentation check: if this project has a README or CONTRIBUTING
-   doc describing how to add a new page/feature, add a short section
-   (a few lines, not a rewrite) noting the i18n convention now in
-   place — new namespaces go in src/shared/i18n/locales/fa/, registered
-   in src/shared/i18n/index.ts, and every new user-facing string must
-   use useTranslation() rather than hardcoded JSX text, with the
-   missing-key test guard from step 2 as the enforcement mechanism.
+4. Add i18n keys.
 
 Files affected:
-- Any file fixed by step 1's final grep (report the exact list, even
-  if empty)
-- src/shared/i18n/index.ts or src/test/setup.ts (for the missing-key
-  handler configuration)
-- Any file with a genuinely missing key surfaced in step 3
-- A new end-to-end smoke test file (location per this project's
-  existing integration-test conventions)
-- README/CONTRIBUTING doc (only if such a file exists — report either
-  way)
+- src/features/admin/api/admin.api.ts
+- src/features/admin/types/admin.types.ts
+- src/features/admin/pages/AdminDisputesPage.tsx,
+  AdminPayoutsPage.tsx (replacing placeholders)
+- src/shared/i18n/locales/fa/admin.json
+- src/test/mocks/handlers/admin.handlers.ts
+
+Then write tests for both pages (list, filter, and the two action
+flows).
 
 Acceptance Criteria:
-- grep -rn "ml-[0-9]\|mr-[0-9]\|pl-[0-9]\|pr-[0-9]\|left-[0-9]\|right-[0-9]\|text-left\|text-right\|border-l-\|border-r-\|rounded-l-\|rounded-r-\|space-x-" src/
-  returns zero results project-wide
-- npx vitest run (full suite, with missing-key detection now active)
-  passes with zero failures
+- npx vitest run passes the entire frontend test suite
 - npm run build succeeds
-- The new end-to-end smoke test passes
+- Every monetary value on both pages uses formatToman, not a raw number
+  (confirm with a quick grep of the new files for a bare {amount}
+  interpolation)
 
 Verification Steps:
-1. grep -rn "ml-[0-9]\|mr-[0-9]\|pl-[0-9]\|pr-[0-9]\|left-[0-9]\|right-[0-9]\|text-left\|text-right\|border-l-\|border-r-\|rounded-l-\|rounded-r-\|space-x-" src/
+1. npx vitest run
+2. npm run build
+3. grep -n "{.*amount.*}" src/features/admin/pages/AdminDisputesPage.tsx src/features/admin/pages/AdminPayoutsPage.tsx
+   (manually confirm every match goes through formatToman)
+4. git diff --stat
+```
+
+### Prompt 12 — فرانت‌اند: نظارت بر `Reviews`
+
+```
+Goal: Implement the real AdminReviewsPage.
+
+Before starting, read apps.adminapi's reviews endpoint (Prompt 5,
+backend), and src/features/reviews/components/StarRatingDisplay.tsx
+(from the previous roadmap's Phase 3) — reuse this exact component for
+rating display, don't rebuild it.
+
+What to build:
+
+1. Extend admin.api.ts with listReviews, moderateReview.
+
+2. AdminReviewsPage.tsx: list (status filter + a "flagged only"
+   toggle), each row showing student_name, teacher_name (reused
+   StarRatingDisplay for rating), comment, report_count (highlighted
+   if > 0), status; a "Publish"/"Hide" toggle action per row (calling
+   moderateReview with the appropriate new_status).
+
+3. Add i18n keys.
+
+Files affected:
+- src/features/admin/api/admin.api.ts
+- src/features/admin/types/admin.types.ts
+- src/features/admin/pages/AdminReviewsPage.tsx (replacing placeholder)
+- src/shared/i18n/locales/fa/admin.json
+- src/test/mocks/handlers/admin.handlers.ts
+
+Then write tests for list rendering, the flagged filter, and the
+moderate action.
+
+Acceptance Criteria:
+- npx vitest run passes the entire frontend test suite
+- npm run build succeeds
+
+Verification Steps:
+1. npx vitest run
+2. npm run build
+3. git diff --stat
+```
+
+### Prompt 13 — فرانت‌اند: مدیریت محتوا (`StaticPages` + `Articles`)
+
+```
+Goal: Implement the real AdminContentPagesPage (edit the five static
+pages) and AdminArticlesPage (full article CRUD with publish workflow).
+
+Before starting, read apps.adminapi's content endpoints (Prompt 6,
+backend), and src/features/content/pages/StaticPageView.tsx /
+ArticleDetailPage.tsx (Phase 2 of this roadmap) for the public-facing
+equivalents' data shapes.
+
+What to build:
+
+1. Extend admin.api.ts with listStaticPages, updateStaticPage,
+   listArticles (admin variant, unfiltered by status), createArticle,
+   updateArticle, publishArticle, unpublishArticle, archiveArticle.
+
+2. AdminContentPagesPage.tsx: a list of the five fixed static pages,
+   each opening an edit form (title + body textarea) using
+   react-hook-form, saving via updateStaticPage.
+
+3. AdminArticlesPage.tsx: a paginated list (status + category filters,
+   showing DRAFT/PUBLISHED/ARCHIVED all together, unlike the public
+   list), a "New Article" button opening a create form (title, slug —
+   auto-suggested from title but editable, excerpt, body, category,
+   cover_image upload), and per-row actions (Edit, Publish/Unpublish,
+   Archive) matching the state-machine transitions from Phase 0.
+   Reflect the status with a colored badge.
+
+4. Add i18n keys.
+
+Files affected:
+- src/features/admin/api/admin.api.ts
+- src/features/admin/types/admin.types.ts
+- src/features/admin/pages/AdminContentPagesPage.tsx,
+  AdminArticlesPage.tsx (replacing placeholders)
+- src/features/admin/components/ArticleEditorForm.tsx (new, shared
+  between create and edit flows)
+- src/shared/i18n/locales/fa/admin.json
+- src/test/mocks/handlers/admin.handlers.ts
+
+Then write tests: static page edit save flow; article list with
+filters; create flow (including client-side slug validation matching
+the backend's SlugField format rules from Phase 0); publish/unpublish/
+archive actions, including a test confirming the UI correctly reflects
+that publishing an already-PUBLISHED article is rejected (surfacing the
+backend's invalid_article_status error via getApiErrorMessage).
+
+Acceptance Criteria:
+- npx vitest run passes the entire frontend test suite
+- npm run build succeeds
+
+Verification Steps:
+1. npx vitest run
+2. npm run build
+3. Manual check: create a DRAFT article, publish it, confirm it now
+   appears on the public /articles page (Phase 2) and the homepage's
+   LatestArticlesSection (Phase 4)
+4. git diff --stat
+```
+
+### Prompt 14 — فرانت‌اند: `Contact Inbox` (بازاستفادهٔ کامل Phase 1) + `Audit Log`
+
+```
+Goal: Implement AdminContactPage, consuming the contact-admin endpoints
+that already fully exist from Phase 1 of this roadmap (no new backend
+work needed here), and AdminAuditLogPage.
+
+Before starting, read:
+1. apps.contact.views (Phase 1 of this roadmap) — confirm
+   ContactMessageListView, ContactMessageDetailView,
+   RespondToContactMessageView, ArchiveContactMessageView's exact
+   existing URL paths and response shapes — this prompt calls these
+   directly, NOT via apps.adminapi (since they already exist under
+   /api/contact/messages/... and don't need to be duplicated into the
+   adminapi namespace)
+2. apps.adminapi's audit-log endpoint (Prompt 7, backend)
+
+What to build:
+
+1. Extend src/features/contact/api/contact.api.ts (from Phase 2 of
+   this roadmap) with the admin-facing calls: listMessages (status
+   filter), getMessage (triggers the backend's auto NEW->READ
+   transition, per Phase 1's design — the frontend doesn't need to
+   know this happens, it just calls GET), respondToMessage,
+   archiveMessage. (These belong in the contact feature's own API
+   file, not admin.api.ts, since they're genuinely part of the contact
+   domain — the admin panel is just another consumer of that feature's
+   API layer, matching this project's established feature-boundary
+   conventions.)
+
+2. AdminContactPage.tsx (in src/features/admin/pages/, even though it
+   calls contact.api.ts): a list (status filter tabs: New/Read/
+   Responded/Archived), each row showing name/email/subject/
+   created_at; clicking a row opens the full message (this GET call is
+   what triggers the NEW->READ transition server-side — the UI should
+   simply reflect the returned status afterward, no special
+   client-side handling needed); Respond and Archive buttons per the
+   status-machine rules from Phase 1 (Archive only enabled for
+   READ/RESPONDED, matching the backend's own rejection of archiving a
+   NEW message).
+
+3. Extend admin.api.ts with listAuditLog (action filter).
+
+4. AdminAuditLogPage.tsx: a paginated, read-only list showing
+   actor_email, action, target_type/target_id, created_at, with an
+   expandable/tooltip view of the details JSON for each row, and an
+   action-type filter dropdown.
+
+5. Add i18n keys for both pages.
+
+Files affected:
+- src/features/contact/api/contact.api.ts
+- src/features/admin/api/admin.api.ts
+- src/features/admin/pages/AdminContactPage.tsx,
+  AdminAuditLogPage.tsx (replacing placeholders)
+- src/shared/i18n/locales/fa/admin.json
+- src/test/mocks/handlers/contact.handlers.ts, admin.handlers.ts
+
+Then write tests for both pages (list, filter, the contact
+respond/archive flow, and audit log rendering).
+
+Acceptance Criteria:
+- npx vitest run passes the entire frontend test suite
+- npm run build succeeds
+
+Verification Steps:
+1. npx vitest run
+2. npm run build
+3. Manual check: submit a real contact message via the public /contact
+   form (Phase 2), confirm it appears in AdminContactPage as NEW,
+   opening it transitions it to READ
+4. git diff --stat
+```
+
+### Prompt 15 — بررسی نهایی جامع End-to-End (کل Phase)
+
+```
+Goal: Final comprehensive review of this entire Phase — full regression
+across backend and frontend, a complete manual walkthrough checklist,
+and confirmation that every admin action correctly produces an
+AdminAuditLog entry visible in the new Audit Log page itself (closing
+the full loop).
+
+Before starting, review the diffs from Prompts 1-14.
+
+What to build:
+
+1. Run the full backend test suite: pytest -x — confirm zero
+   regressions across every domain this Phase touched (users, teachers,
+   payments, reviews, content, contact, adminapi).
+
+2. Run the full frontend test suite: npx vitest run, and npm run build.
+
+3. Add one frontend integration test
+   (src/features/admin/__tests__/adminE2E.test.tsx or matching this
+   project's existing integration-test location convention) that:
+   - Renders the app as a logged-in staff user
+   - Navigates to /admin, confirms the dashboard stats render
+   - Navigates to /admin/teachers/verification, approves a mocked
+     UNDER_REVIEW verification
+   - Navigates to /admin/audit-log, confirms a new entry for
+     "teacher_verification_approved" appears (using MSW to return an
+     updated audit log list after the mutation)
+
+4. Final grep sweeps across all of src/features/admin/:
+   grep -rln "ml-[0-9]\|mr-[0-9]\|text-left\|text-right" src/features/admin/
+   grep -rlnP '#[0-9a-fA-F]{3,8}\b|rgb\(' src/features/admin/
+   grep -rn "formatDate\b\|formatDateTime\b" src/features/admin/
+   (all three should return nothing, per this project's established
+   RTL/color-token/Jalali-date conventions from earlier roadmap phases)
+
+5. Manual walkthrough checklist (perform directly): as a staff user,
+   exercise every one of the ten admin sections at least once against
+   a running backend seeded with realistic data — dashboard counts
+   update correctly after actions, teacher approve/reject/suspend,
+   dispute resolve, payout mark-transferred, review moderate, static
+   page edit, article full lifecycle, contact respond/archive, and
+   confirm the audit log shows every one of these actions.
+
+Files affected:
+- One new integration test file
+- Any regression fix found in steps 1-2 (report even if none needed)
+
+Acceptance Criteria:
+- pytest -x (full backend suite) passes with zero failures
+- npx vitest run (full frontend suite) passes with zero failures
+- npm run build succeeds
+- All three grep sweeps in step 4 return no results
+- The new integration test passes
+- The manual walkthrough in step 5 completes without any broken action
+
+Verification Steps:
+1. pytest -x -v
 2. npx vitest run
 3. npm run build
-4. Manual full walkthrough: run the dev server and click through every
-   major flow (marketplace -> teacher profile -> booking -> checkout
-   -> callback -> session -> review, plus auth pages and the teacher
-   dashboard) confirming Persian text and correct RTL layout throughout
-5. git diff --stat (final summary of this entire Phase)
+4. grep -rln "ml-[0-9]\|mr-[0-9]\|text-left\|text-right" src/features/admin/
+5. grep -rlnP '#[0-9a-fA-F]{3,8}\b|rgb\(' src/features/admin/
+6. grep -rn "formatDate\b\|formatDateTime\b" src/features/admin/
+7. Manual full walkthrough as described in step 5 above
+8. git diff --stat (final summary of this entire Phase — the largest
+   in this roadmap)
 ```
