@@ -1,4 +1,4 @@
-# Phase 5 — Admin Dashboard سفارشی (React)
+# Phase Admin Dashboard سفارشی (React)
 
 ## Implementation Prompts
 
