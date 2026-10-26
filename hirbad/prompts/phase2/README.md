@@ -1,341 +1,229 @@
-# معماری و پرامپت‌ها: منوی عمومی هیربَد
+# معماری و پرامپت‌های اجرایی: فیلد «تلفن» و «سابقه تدریس»
 
-## ۱. یافته‌های تازه از کد که طراحی را شکل داده‌اند
+پروژه: hirbad-platform · فاز ۱: بررسی پروژه، طراحی معماری، پرامپت برای ایجنت‌های هوش مصنوعی
 
-۱. **تست‌های فعلی Navbar عمداً لینک «کلاس‌های گروهی» را ممنوع کرده‌اند.** این لینک قبلاً در `DashboardLayout` هم برای مدرس نمایش داده می‌شد و حذف شد. `CommandPalette` همین قاعده را با `excludeRoles: ["TEACHER"]` اعمال می‌کند. اگر لینک‌های عمومی را روی `<Navbar />` بی‌قید بگذاریم، سه تست فعلی می‌شکنند و باگ قدیمی برمی‌گردد. بنابراین Navbar یک `variant` می‌گیرد و لینک‌ها فقط در `variant="public"` می‌آیند. لینک گروهی هم برای مدرس فیلتر می‌شود.
+## ۱. خلاصه تصمیم‌ها
 
-۲. **یک باگ دوم در همان ناحیه هست.** همبرگر `md:hidden` است (از ۷۶۸px پنهان می‌شود) ولی Sidebar فقط از `lg:block` (۱۰۲۴px) دیده می‌شود. بین ۷۶۸ تا ۱۰۲۳px، مثلاً در تبلت، در داشبورد هیچ ناوبری‌ای وجود ندارد. هر دو نقطه‌ی شکست را یکی می‌کنم: همبرگر `lg:hidden` و لینک‌های افقی `lg:flex`.
+- `phone_number` روی مدل `User` (نه روی دو پروفایل): یک ستون، یک اعتبارسنجی، و ادمین‌ها (`is_staff`) که پروفایل ندارند هم پوشش داده می‌شوند.
+- `teaching_experience_years` روی `TeacherProfile`: عدد صحیح ۰ تا ۶۰ و nullable (null یعنی «ثبت نشده»، پس معلم‌های فعلی نیازی به backfill ندارند).
+- تلفن فقط در سه خروجی ظاهر می‌شود: `/api/accounts/me/` (فقط خود کاربر)، `AdminUserSerializer` و `AdminTeacherVerificationSerializer` (به‌علاوه Django admin). این قانون با تست خودکار قفل می‌شود، نه با حافظه‌ی توسعه‌دهنده.
+- سابقه تدریس عمومی است: صفحه‌ی عمومی معلم، کارت لیست معلم‌ها و پروفایل خود معلم.
+- وابستگی جدید اضافه نمی‌شود؛ نرمال‌سازی شماره در `apps/common/phone.py` (و آینه‌ی آن در فرانت).
 
-۳. ابزارهای پروژه، یعنی `Sheet`، `useLocale().dir` و الگوی `side={dir === "rtl" ? "right" : "left"}` در Sidebar، همه آماده‌اند. `ui/sheet.tsx` را دست نمی‌زنیم.
+## ۲. یافته‌های بررسی پروژه
 
-۴. گیت‌های CI شامل `typecheck`، `lint`، `lint:colors` (ممنوعیت رنگ hex/rgb) و `vitest` است. فقط token classهای Tailwind مجاز است.
+بک‌اند: Django 5.2 + DRF + Celery با لایه‌بندی views ← serializers (فقط اعتبارسنجی) ← services (نوشتن) / selectors (خواندن). فرانت: React 19 + Vite + TypeScript + react-hook-form + zod + i18next (فقط فارسی) + vitest.
 
-## ۲. معماری هدف
+| موضوع | محل | نکته‌ی مهم برای این کار |
+| --- | --- | --- |
+| مدل‌ها | `apps/users/models.py` | `User` + `StudentProfile` + `TeacherProfile`؛ پروفایل با signal ساخته می‌شود. آخرین migration: `0008` |
+| نوشتن پروفایل | `users/services.py` | فیلدهای قابل‌ویرایش با whitelist (`_TEACHER_PROFILE_EDITABLE_FIELDS`) تعیین می‌شوند؛ فیلد جدیدی که اینجا اضافه نشود **بی‌صدا نادیده گرفته می‌شود** |
+| دو مسیر نوشتن پروفایل معلم | `PATCH /api/accounts/me/` و `PATCH /api/teachers/me/` | هر کدام serializer ورودی جدا دارند (`TeacherProfileSerializer` و `TeacherProfileUpdateSerializer`)؛ هر دو باید هماهنگ شوند |
+| خروجی عمومی معلم | `teachers/serializers.py` | `TeacherDetailSerializer` هم برای کاربر ناشناس (`/api/teachers/<id>/`) و هم برای `/teachers/me/` استفاده می‌شود؛ هر فیلدی که آنجا اضافه شود عمومی است. `TeacherSummarySerializer` لیست عمومی است |
+| شرکت‌کننده‌ها | serializerهای `bookings` و `sessions` | فقط `id / full_name / avatar_url` برمی‌گردانند؛ امن‌اند و نباید دست بخورند. معلم لیست دانش‌آموزان جلسه را با همین‌ها می‌بیند |
+| ادمین | `adminapi/serializers.py` | `AdminUserSerializer` و `AdminTeacherVerificationSerializer`؛ دسترسی با `IsAdminUser` (= `is_staff`) |
+| لاگ | `apps/common/logging.py` | ماسک کردن بر اساس **نام پارامتر** است (`password/token/secret/email/authorization`). `phone` باید اضافه شود؛ `AdminAuditLog.details` هم مقادیر JSON را عیناً نگه می‌دارد |
+| تست وابسته | `tests/adminapi/test_users.py` | مجموعه‌ی دقیق فیلدهای `AdminUserSerializer` را چک می‌کند (`_USER_FIELDS`)؛ باید به‌روز شود |
+| فرانت | `features/profile`, `features/teachers`, `features/admin` | `ProfileForm.tsx`, `profile.types.ts`, `TeacherPublicProfilePage.tsx`, `TeacherCard.tsx`, `AdminUsersPage.tsx` و فایل‌های i18n در `shared/i18n/locales/fa` |
 
-```
-src/shared/components/layout/
-├── publicNav.ts            ← NEW  منبع واحد لینک‌ها + فیلتر نقش (بدون JSX)
-├── PublicNavLinks.tsx      ← NEW  نوار افقی دسکتاپ (lg و بالاتر)
-├── PublicNavSheet.tsx      ← NEW  کشوی موبایل/تبلت (زیر lg)
-├── Navbar.tsx              ← EDIT variant + state منوی عمومی
-├── AppLayout.tsx           ← EDIT <Navbar variant="public" />
-├── DashboardLayout.tsx     ← EDIT <Navbar variant="dashboard" onMenuClick=… />
-└── __tests__/
-    ├── Navbar.test.tsx             ← EDIT (تست‌های جدید، قدیمی‌ها دست‌نخورده)
-    ├── PublicNavSheet.test.tsx     ← NEW
-    └── PublicNavLinks.test.tsx     ← NEW
-shared/i18n/locales/fa/common.json  ← EDIT کلیدهای nav.*
-test/integration/app-shell.smoke.test.tsx ← EDIT یک سناریوی «صفحه اصلی + همبرگر»
-```
+**یافته‌ی جانبی (خارج از این کار):** `TeacherDetailSerializer` فیلد `email` معلم را به کاربر ناشناس هم نشان می‌دهد. در `features/teachers` فرانت جایی از آن استفاده نشده (بقیه‌ی فرانت را برای این مورد نگشتم). اگر قصدتان پنهان کردن اطلاعات تماس معلم‌هاست، جداگانه تصمیم بگیرید. به ایجنت‌ها گفته‌ام آن را تغییر ندهند.
 
-### ۲.۱ قرارداد `publicNav.ts`
+## ۳. معماری
 
-```ts
-type Role = "TEACHER" | "STUDENT";
-interface PublicNavItem {
-  id: string;
-  to: string;
-  labelKey: string;              // کلید namespace "common"
-  excludeRoles?: Role[];
-  placement: "primary" | "secondary";
-}
-// primary  → هم در نوار افقی دسکتاپ، هم در Sheet
-// secondary → فقط در Sheet (و فوتر که خودش دارد)
-export const PUBLIC_NAV_ITEMS: readonly PublicNavItem[];
-export function getPublicNavItems(
-  role: Role | undefined,
-  scope: "primary" | "all"
-): PublicNavItem[];
-```
+### ۳.۱ مدل داده
 
-| id | مسیر | placement | excludeRoles |
-|---|---|---|---|
-| teachers | `/teachers` | primary | – |
-| groupSessions | `/group-sessions` | primary | TEACHER |
-| articles | `/articles` | primary | – |
-| about | `/about` | secondary | – |
-| faq | `/faq` | secondary | – |
-| contact | `/contact` | secondary | – |
+- `User.phone_number = CharField(max_length=16, blank=True, default='')` بدون unique و بدون index. unique نیست چون ممکن است اعضای یک خانواده شماره‌ی مشترک بدهند، و چون unique بودن راهی برای لو رفتن وجود یک حساب (account enumeration) است.
+- ذخیره‌ی نرمال‌شده: موبایل ایران به شکل `+989121234567` و شماره‌های بین‌المللی به شکل E.164. ورودی با ارقام فارسی/عربی و قالب‌هایی مثل `0912…`، `0098…`، فاصله و خط تیره پذیرفته می‌شود.
+- `TeacherProfile.teaching_experience_years = PositiveSmallIntegerField(null=True, blank=True)` با سقف ۶۰.
+- یک migration افزایشی و برگشت‌پذیر (`0009`).
 
-### ۲.۲ قرارداد `Navbar`
+### ۳.۲ ماتریس دسترسی
 
-```ts
-interface NavbarProps {
-  variant?: "public" | "dashboard";   // default: "dashboard"
-  onMenuClick?: () => void;           // فقط dashboard
-}
-```
+| داده | کاربر ناشناس | معلم یا دانش‌آموزِ دیگر | خود کاربر | ادمین |
+| --- | --- | --- | --- | --- |
+| تلفن | ✗ | ✗ | ✓ مشاهده و ویرایش | ✓ مشاهده |
+| سابقه تدریس | ✓ | ✓ | ✓ مشاهده و ویرایش (معلم) | ✓ |
 
-مقدار پیش‌فرض عمداً `"dashboard"` است تا تست‌های فعلی که `<Navbar />` را بدون prop رندر می‌کنند بدون تغییر سبز بمانند.
+فرض من: خود کاربر تلفن خودش را می‌بیند و ویرایش می‌کند (بدون این، ثبت تلفن ممکن نیست). اگر مخالفید فقط سطح `UserMeSerializer` عوض می‌شود.
 
-| | `public` | `dashboard` |
-|---|---|---|
-| همبرگر (`lg:hidden`) | همیشه هست و `PublicNavSheet` را با state داخلی باز می‌کند | فقط اگر `onMenuClick` داده شده باشد |
-| لینک افقی (`hidden lg:flex`) | `PublicNavLinks` | ندارد |
-| `PublicNavSheet` | رندر می‌شود | رندر نمی‌شود |
+### ۳.۳ قرارداد API (منبع حقیقت برای بک‌اند و فرانت)
 
-### ۲.۳ رفتار `PublicNavSheet` به‌تفکیک کاربر
+| Endpoint | تغییر |
+| --- | --- |
+| `GET/PATCH /api/accounts/me/` | فیلد سطح‌بالای `phone_number` (رشته؛ خالی یعنی ثبت نشده؛ خطای اعتبارسنجی با کد `invalid_phone_number`). برای معلم `profile.teaching_experience_years` (عدد یا null) |
+| `PATCH /api/teachers/me/` | پذیرش `teaching_experience_years` |
+| `GET /api/teachers/` و `/api/teachers/<id>/` | خروجی `teaching_experience_years` |
+| `GET /api/admin/users/` و `/<id>/` | خروجی `phone_number` |
+| `GET /api/admin/teachers/verifications/…` | خروجی `teacher_phone_number` |
 
-| وضعیت | لینک‌های وسط | پایین Sheet |
-|---|---|---|
-| مهمان | همه ۶ لینک | دکمه‌ی «ورود» و دکمه‌ی «ثبت‌نام رایگان» |
-| دانش‌آموز | همه ۶ لینک | لینک «رفتن به داشبورد» |
-| مدرس | ۵ لینک (بدون کلاس‌های گروهی) | لینک «رفتن به داشبورد» |
+### ۳.۴ دفاع چندلایه‌ی حریم خصوصی
 
-جزئیات رفتار:
+1. **ساخت امن:** تلفن فقط در سه serializer مجاز تعریف می‌شود؛ هیچ `fields='__all__'` یا `exclude` روی `User` و پروفایل‌ها پذیرفته نیست.
+2. **تست نگهبان (allowlist):** همه‌ی serializerها اسکن می‌شوند و اگر serializer دیگری `phone_number` داشته باشد تست می‌شکند.
+3. **تست canary نشت:** به همه‌ی کاربران شماره‌ی متمایز داده می‌شود، همه‌ی endpointهای عمومی و بین‌کاربری (معلم‌ها، رزرو، جلسه‌ی گروهی، نظرات، پرداخت، اعلان‌ها) با نقش‌های مختلف صدا زده می‌شود و در بدنه‌ی پاسخ‌ها، ایمیل‌های خروجی، payload اعلان‌ها و لاگ‌ها دنبال شماره گشته می‌شود.
+4. **لاگ:** افزودن `phone` به `_SENSITIVE_NAME_MARKERS`.
+5. تلفن هرگز در فیلتر یا جستجوی عمومی نمی‌آید؛ جستجو با تلفن فقط برای ادمین (API ادمین و Django admin).
 
-- با کلیک روی هر لینک، Sheet بسته می‌شود (مثل `onNavigate` در Sidebar).
-- لبه‌ی Sheet از `dir` گرفته می‌شود.
-- از `SheetTitle` و `SheetDescription` برای a11y استفاده می‌شود (Radix بدون آن‌ها هشدار می‌دهد).
-- لینک فعال با `NavLink` و کلاس‌های `bg-primary/10 text-primary` مشخص می‌شود.
-- فقط از logical propertyها (`ms-`، `ps-`، `start-`، …) و token classها استفاده می‌شود.
+### ۳.۵ تصمیم‌های باز (پیش‌فرض‌ها در پرامپت‌ها اعمال شده؛ نظرتان را بگویید)
 
-### ۲.۴ کلیدهای i18n جدید (`nav.*`)
+- **ثبت‌نام:** تلفن به فرم ثبت‌نام اضافه نمی‌شود، فقط در پروفایل و اختیاری. اجباری کردنش بعداً ساده است.
+- **تلفن ثابت:** فعلاً فقط موبایل ایران و شماره‌ی بین‌المللی.
+- **ویرایش تلفن کاربران توسط ادمین:** فقط از Django admin.
+- **فیلتر یا مرتب‌سازی لیست معلم‌ها بر اساس سابقه:** خارج از این فاز.
+- **متن سیاست حریم خصوصی** (StaticPage در دیتابیس) را باید خودتان به‌روز کنید.
 
-| کلید | متن |
-|---|---|
-| teachers | معلم‌ها |
-| articles | مقالات |
-| about | درباره ما |
-| faq | سوالات متداول |
-| contact | تماس با ما |
-| mainNav | ناوبری اصلی |
-| publicMenuTitle | منوی هیربَد |
-| publicMenuDescription | دسترسی سریع به بخش‌های عمومی هیربَد |
-| goToDashboard | رفتن به داشبورد |
-| signupFree | ثبت‌نام رایگان |
+## ۴. نقشه‌ی اجرا
 
-کلیدهای `nav.groupSessions`، `nav.login`، `nav.signup` و `nav.openMenu` از قبل هستند.
+| ایجنت | کار | وابستگی |
+| --- | --- | --- |
+| A | بک‌اند: مدل، migration، اعتبارسنجی، سرویس، `/me`، لاگ | — |
+| B | بک‌اند: خروجی عمومی و ادمین، seed، تست‌ها | بعد از A |
+| C | تست‌های امنیتی (canary + allowlist) | بعد از B |
+| D | فرانت‌اند | موازی با A تا C (قرارداد ثابت است) |
+| E | بازبینی نهایی و گزارش | آخر از همه |
 
-### ۲.۵ تصمیم‌ها و ریسک‌ها
+پیشنهاد: A→B→C پشت سر هم روی یک branch، D روی branch جدا، و E روی branch ادغام‌شده. هر پرامپت با «Common preamble» شروع می‌شود.
 
-- **D1:** دکمه‌های ورود/ثبت‌نام هدر موبایل بدون تغییر می‌مانند و در Sheet هم تکرار می‌شوند. ریسک: در ۳۲۰px هدر مهمان شلوغ می‌شود (همبرگر، لوگو، جستجو، تم، ورود، عضویت). ایجنت باید در ۳۲۰ و ۳۶۰px بررسی کند. اگر سرریز دید، لینک «ورود» هدر را در `variant="public"` زیر `sm` پنهان می‌کنیم، چون در Sheet هست.
-- **D2:** `CommandPalette`، `Footer` و `Sidebar` دست نمی‌خورند.
-- **D3:** تغییر breakpoint همبرگر داشبورد از `md` به `lg` در همین کار انجام می‌شود (یافته‌ی ۲) و در توضیح PR جدا ذکر می‌شود.
+## ۵. پرامپت‌ها (انگلیسی)
 
-## ۳. ترتیب اجرا
+### Common preamble (ابتدای هر پنج پرامپت paste شود)
 
-```
-T1 (config + i18n) → T2 (کامپوننت‌ها) → T3 (سیم‌کشی Navbar/Layoutها)
-                      ↘ T4 (تست‌ها) می‌تواند با T2 و T3 موازی شروع شود (قرارداد بخش ۲ ثابت است)
-                                           → T5 (بازبینی مستقل)
+```text
+You are working in the monorepo 'hirbad-platform', a Persian-language tutoring marketplace.
+- Backend: hirbad-backend/ (Django 5.2, DRF, Celery, pytest, factory_boy; black, isort, flake8).
+- Frontend: hirbad-frontend/ (React 19, Vite, TypeScript, react-hook-form + zod, TanStack Query, i18next with Persian-only locales, Tailwind, vitest).
+
+GOAL OF THE OVERALL FEATURE
+1. phone_number on every User (teacher and student). PRIVATE: visible only to (a) the owner through GET/PATCH /api/accounts/me/ and (b) staff (is_staff). It must never appear in any response seen by another teacher, another student, or an anonymous visitor.
+2. teaching_experience_years on TeacherProfile only. PUBLIC: visible to everybody. Integer 0-60, nullable (null = not provided).
+You are one of several agents; do only the scope given in your task section.
+
+API CONTRACT (source of truth)
+- GET/PATCH /api/accounts/me/: top-level 'phone_number' (string; '' = unset; input accepts common Iranian/international formats and is stored canonical, e.g. '+989121234567'; '' clears it; invalid input -> HTTP 400 with field error code 'invalid_phone_number'). For teachers also 'profile.teaching_experience_years' (integer or null).
+- PATCH /api/teachers/me/: accepts 'teaching_experience_years' (integer 0-60 or null).
+- GET /api/teachers/ and GET /api/teachers/<id>/: include 'teaching_experience_years'.
+- GET /api/admin/users/ and /api/admin/users/<id>/: include 'phone_number'. Admin teacher-verification endpoints include 'teacher_phone_number'.
+- 'phone_number' appears in NO other response, email, notification payload or log line.
+
+RULES
+- Read the neighbouring code first and imitate its style, naming and docstring tone (comments explain why).
+- Layering: views -> serializers (validate/shape only) -> services (all writes, decorated like their siblings) / selectors (reads). No ORM writes in views or serializers.
+- Serializers list fields explicitly. Never use fields='__all__' or exclude.
+- UI text lives only in the Persian i18n JSON files; no hardcoded user-facing strings.
+- Stay in scope. If you notice an unrelated bug or smell (for example the public teacher endpoint exposing 'email'), do NOT change it; mention it in your final report.
+- Do not add dependencies.
+- Run the checks listed in your task. Never claim a check passed unless you ran it; if you cannot run something, say so.
+- Final report: files changed, decisions and assumptions, open questions, commands run with results.
 ```
 
-### Preamble (به ابتدای هر پرامپت اضافه کن)
+### Prompt A — Backend core (مدل، اعتبارسنجی، مسیر نوشتن)
 
-```
-You are working in the repo `hirbad-platform`, directory `hirbad-frontend/`
-(React 19, Vite, TypeScript, Tailwind + shadcn/ui, react-router-dom v6,
-react-i18next with a single Persian/RTL locale, Vitest + Testing Library).
+```text
+TASK A — Backend core: data model, validation, write path (scope: hirbad-backend/apps/users, apps/common, and tests for them)
 
-Project conventions you MUST follow:
-- Every source file starts with a path comment, e.g. `// src/shared/components/layout/X.tsx`.
-- Path alias `@/` maps to `src/`.
-- RTL-first: use logical Tailwind utilities (ms-/me-/ps-/pe-/start-/end-), never left/right,
-  except where an existing component's API is physical (ui/sheet.tsx `side`).
-- No hardcoded colors (no hex/rgb/rgba). Use Tailwind token classes only
-  (bg-background, text-muted-foreground, bg-primary/10, ...). `npm run lint:colors` enforces this.
-- All user-facing strings go through `useTranslation("common")` with keys in
-  `src/shared/i18n/locales/fa/common.json`. No inline Persian strings in components
-  (the brand name "هیربَد" in the Navbar logo is the existing exception).
-- eslint-plugin-react-refresh is on: component files export only components;
-  put constants/helpers in separate .ts files.
-- Do NOT modify: src/shared/components/ui/** (incl. sheet.tsx), CommandPalette.tsx,
-  Footer.tsx, Sidebar.tsx, any backend file.
-- Quality gates (run from hirbad-frontend/): `npm run typecheck`, `npm run lint`,
-  `npm run lint:colors`, `npm test`. All must pass before you report done.
-- Keep the diff minimal and scoped to the task below. Do not refactor unrelated code.
+Read first: apps/users/{models,services,serializers,admin,signals}.py, apps/common/logging.py, apps/users/migrations/0008_*.py, tests/users/*, tests/factories/user_factories.py.
 
-Background: the mobile hamburger in Navbar is dead on public pages because AppLayout renders
-<Navbar /> without `onMenuClick` and there is no public menu. We are adding a public navigation
-(desktop inline links + mobile/tablet Sheet), driven by one shared config.
-```
+1. Create apps/common/phone.py with a pure function normalize_phone_number(raw: str) -> str that raises ValueError on invalid input.
+   - Strip whitespace, '-', '.', '(' and ')'. Convert Persian (U+06F0-06F9) and Arabic-Indic (U+0660-0669) digits to ASCII.
+   - Iranian mobile numbers in any of these forms are canonicalised to '+98' + 10 digits starting with 9: '09123456789', '9123456789', '989123456789', '+989123456789', '00989123456789'.
+   - Any other input must be '+' (or a leading '00' converted to '+') followed by 8-15 digits, first digit non-zero; it is kept as is.
+   - Empty or whitespace-only input returns ''.
+   - Everything else raises ValueError.
+2. apps/users/models.py:
+   - User.phone_number = CharField(max_length=16, blank=True, default=''), no unique, no index. Comment why it is not unique (shared family numbers; uniqueness would also be an account-enumeration oracle) and that it is PRIVATE (owner + staff only).
+   - TeacherProfile.teaching_experience_years = PositiveSmallIntegerField(null=True, blank=True, validators=[MaxValueValidator(60)]) with help_text; null means 'not provided'.
+3. Generate ONE additive, reversible migration (0009) with `python manage.py makemigrations users`; give it a descriptive name; do not edit existing migrations; confirm `python manage.py makemigrations --check --dry-run` is clean.
+4. apps/users/services.py:
+   - Add 'teaching_experience_years' to _TEACHER_PROFILE_EDITABLE_FIELDS (the service silently ignores non-whitelisted keys). In update_teacher_profile raise ApplicationError if the value is not None and outside 0-60.
+   - In update_user_profile handle top-level 'phone_number' next to 'full_name': normalise via normalize_phone_number (convert ValueError to ApplicationError with code 'invalid_phone_number'; the service must not trust the serializer) and issue a single user.save(update_fields=[...]) containing only the fields that were provided.
+5. apps/users/serializers.py:
+   - UserMeSerializer: add 'phone_number' to fields as a writable, optional field (CharField, required=False, allow_blank=True, max_length=32) with validate_phone_number that calls normalize_phone_number and raises ValidationError(code='invalid_phone_number'). All existing read-only fields (is_staff, role, ...) stay read-only. UserMeSerializer is the only non-admin serializer allowed to expose phone_number.
+   - TeacherProfileSerializer: add 'teaching_experience_years' (IntegerField, min_value=0, max_value=60, allow_null=True, required=False).
+   - Do not touch UserPublicSerializer or StudentProfileSerializer.
+   - Prove by test that a nested PATCH {'profile': {'teaching_experience_years': 10}} reaches the service through UserMeSerializer.to_internal_value, and that PATCH {'phone_number': '...'} works for both roles.
+6. apps/users/admin.py (Django admin is staff-only): add phone_number to the 'Personal info' fieldset and to UserAdmin.search_fields; add teaching_experience_years to TeacherProfileAdmin.list_display.
+7. apps/common/logging.py: add 'phone' to _SENSITIVE_NAME_MARKERS with a comment (masking is by parameter name, so a kwarg named phone_number must be masked in both log_service_call and AdminAuditLog details). Add a test for both paths next to the existing ones in tests/common/.
+8. Tests (pytest, existing factories; extend factories only if needed): table-driven tests for normalize_phone_number (all accepted forms, Persian digits, invalid cases, empty); service tests; /api/accounts/me/ GET and PATCH round-trips for student and teacher (set, change, clear with '', invalid -> 400 with code 'invalid_phone_number'); experience set via nested profile, null clears, -1 and 61 rejected; a student cannot set teaching_experience_years.
 
-### T1: کانفیگ و ترجمه
-
-```
-TASK T1 — shared public-nav config + i18n keys
-
-1. Create `src/shared/components/layout/publicNav.ts` (no JSX) exporting:
-   - `type PublicNavRole = "TEACHER" | "STUDENT"`
-   - `interface PublicNavItem { id: string; to: string; labelKey: string;
-       excludeRoles?: PublicNavRole[]; placement: "primary" | "secondary" }`
-   - `const PUBLIC_NAV_ITEMS: readonly PublicNavItem[]` with exactly these entries, in this order:
-       teachers      -> /teachers       nav.teachers      primary
-       groupSessions -> /group-sessions nav.groupSessions primary  excludeRoles ["TEACHER"]
-       articles      -> /articles       nav.articles      primary
-       about         -> /about          nav.about         secondary
-       faq           -> /faq            nav.faq           secondary
-       contact       -> /contact        nav.contact       secondary
-   - `function getPublicNavItems(role: PublicNavRole | undefined, scope: "primary" | "all"): PublicNavItem[]`
-     Returns items filtered by (a) scope: "primary" => only placement "primary", "all" => every item;
-     (b) role: drop items whose excludeRoles includes the given role. `undefined` role (guest) drops nothing.
-   Add a short comment explaining the group-sessions rule mirrors CommandPalette's `excludeRoles`
-   and that the marketplace link must never show for teachers.
-
-2. Edit `src/shared/i18n/locales/fa/common.json`, inside the existing `"nav"` object, ADD (do not rename
-   or remove existing keys):
-     "teachers": "معلم‌ها",
-     "articles": "مقالات",
-     "about": "درباره ما",
-     "faq": "سوالات متداول",
-     "contact": "تماس با ما",
-     "mainNav": "ناوبری اصلی",
-     "publicMenuTitle": "منوی هیربَد",
-     "publicMenuDescription": "دسترسی سریع به بخش‌های عمومی هیربَد",
-     "goToDashboard": "رفتن به داشبورد",
-     "signupFree": "ثبت‌نام رایگان"
-   Keep valid JSON and the file's existing indentation/ordering style. Check
-   `src/shared/i18n/__tests__` for any key-parity or snapshot test and keep it green.
-
-3. Add `src/shared/components/layout/__tests__/publicNav.test.ts` (Vitest, pure unit test):
-   - guest + "all" -> 6 items; guest + "primary" -> 3 items
-   - role TEACHER -> no `groupSessions` in either scope
-   - role STUDENT -> includes `groupSessions`
-   - order of items is stable (teachers, groupSessions, articles, about, faq, contact)
-
-Acceptance: all four quality gates pass. Report the files changed.
+Out of scope: teachers and adminapi serializers, seed data, frontend.
+Checks: make lint; pytest --no-cov -p no:cacheprovider tests/users tests/common; then the full suite.
+Done when: the migration is clean, all new tests pass, no existing test was weakened or deleted, and phone_number is defined in exactly one serializer outside adminapi (UserMeSerializer).
 ```
 
-### T2: کامپوننت‌ها
+### Prompt B — Backend exposure layer (خروجی عمومی و ادمین)
 
-```
-TASK T2 — PublicNavLinks and PublicNavSheet (depends on T1 being merged)
+```text
+TASK B — Backend exposure layer (scope: apps/teachers, apps/adminapi, seed_data, tests). Precondition: Task A is merged on your branch.
 
-First read: Sidebar.tsx (how it uses Sheet, `useLocale().dir`, NavLink active classes, `onNavigate`),
-ui/sheet.tsx (exports available, e.g. SheetHeader/SheetTitle/SheetDescription), ui/button.tsx,
-and Navbar.tsx `navLinkClass` for the existing link styling.
+Read first: apps/teachers/{serializers,views,selectors,filters}.py, apps/adminapi/serializers.py, apps/adminapi/views/{users,teachers}.py, apps/common/management/commands/seed_data.py, tests/adminapi/test_users.py, tests/teachers/test_views.py.
 
-1. Create `src/shared/components/layout/PublicNavLinks.tsx`
-   - Renders `<nav aria-label={t("nav.mainNav")} className="hidden items-center gap-1 lg:flex">`.
-   - Items: `getPublicNavItems(user?.role, "primary")`; role from `useAuth()`
-     (`@/app/providers/useAuth`). Each item is a react-router `NavLink` using the same visual
-     classes as Navbar's `navLinkClass` (active: `text-primary bg-primary/10`; idle:
-     `text-muted-foreground hover:text-foreground hover:bg-muted`), including focus-visible ring.
-   - Named export `PublicNavLinks` + default export.
+1. apps/teachers/serializers.py (PUBLIC surface):
+   - TeacherDetailSerializer: add 'teaching_experience_years' to fields (read-only). This serializer feeds the anonymous endpoint, so NEVER add anything phone-related here.
+   - TeacherSummarySerializer: add a read-only 'teaching_experience_years' (source='teacher_profile.teaching_experience_years', allow_null). It must not add queries (list_teachers already select_related the profile; keep existing query-count tests green).
+   - TeacherProfileUpdateSerializer (input of PATCH /api/teachers/me/): add 'teaching_experience_years' (IntegerField 0-60, allow_null, required=False) and verify end to end that the value is persisted and returned in the response.
+2. apps/adminapi/serializers.py (STAFF surface, permission IsAdminUser):
+   - AdminUserSerializer: add 'phone_number' (read-only).
+   - AdminTeacherVerificationSerializer: add 'teacher_phone_number' (source='teacher_profile.user.phone_number', read-only) next to teacher_email.
+   - AdminUserListView search: also match phone numbers. Take the digits of the search term (convert Persian digits, drop non-digits, strip leading zeros) and, when at least 3 digits remain, OR in phone_number__contains=<digits>. Stored numbers are canonical ('+98912...'), so a search for '0912345' must find them.
+3. Public search and filters must never touch phone: do not add it to TeacherFilter, selectors.list_teachers or any search_fields except the staff-only Django admin.
+4. Do NOT modify serializers or templates of bookings, sessions, reviews, payments, notifications, meetings or emails. Prove it: run `grep -rniE 'phone' apps/ --include=*.py --include=*.html --include=*.txt` and paste the result in your report; every hit must be explainable by Task A or B.
+5. seed_data.py (DEBUG only): give seeded users plausible Iranian mobile numbers (Faker) and seeded teachers a teaching_experience_years.
+6. If the project has an OpenAPI schema check (drf-spectacular), run it and make sure it still generates.
+7. Tests: update _USER_FIELDS in tests/adminapi/test_users.py; admin list/detail expose phone_number while non-staff and anonymous callers are rejected; phone search works with '0912...' and '+98912...'; verification admin responses expose teacher_phone_number; public GET /api/teachers/<id>/ and the list expose teaching_experience_years (null and 10); PATCH /api/teachers/me/ sets and clears it, rejects 61 and -1, and a student gets 403.
 
-2. Create `src/shared/components/layout/PublicNavSheet.tsx`
-   - Props: `{ open: boolean; onOpenChange: (open: boolean) => void }`.
-   - Uses `Sheet`/`SheetContent`; `side={dir === "rtl" ? "right" : "left"}` with `dir` from
-     `useLocale()` (copy the explanatory-comment approach from Sidebar.tsx); `className="w-72 p-0"`.
-   - Accessible header: `SheetTitle` = t("nav.publicMenuTitle"), `SheetDescription` =
-     t("nav.publicMenuDescription") (description may be `sr-only`). No Radix a11y warnings in test output.
-   - Body: `<nav aria-label={t("nav.mainNav")}>` listing `getPublicNavItems(user?.role, "all")`
-     as NavLinks styled like Sidebar items (`flex items-center rounded-md px-3 py-2 text-sm ...`),
-     each with `onClick={() => onOpenChange(false)}`.
-   - Footer area (border-t, p-4, space-y-2):
-       * guest (`!isAuthenticated`): full-width primary link-button to `/login` (t("nav.login")) styled as an
-         outline/secondary button, and full-width primary button to `/register` (t("nav.signupFree")).
-         Use the existing Button + `asChild` + `Link` pattern if ui/button supports it; otherwise
-         style Links with the same classes Navbar uses for its signup link.
-       * authenticated: a single link to `/dashboard` with t("nav.goToDashboard").
-     All footer links also close the sheet on click.
-   - Do NOT render a logout control here (the Navbar user dropdown already has it).
-   - Named export + default export.
-
-Constraints: no new dependencies, no hardcoded colors, logical properties only, no edits to ui/*.
-Acceptance: typecheck/lint/lint:colors/test pass (existing tests untouched and green). Components are
-not wired into Navbar yet — that is T3.
+Out of scope: users app internals (Task A), privacy canary tests (Task C), frontend.
+Checks: make lint; pytest --no-cov -p no:cacheprovider tests/teachers tests/adminapi; then the full suite.
 ```
 
-### T3: سیم‌کشی
+### Prompt C — Privacy verification (تست‌های امنیتی)
 
-```
-TASK T3 — wire variants into Navbar and layouts (depends on T2)
+```text
+TASK C — Independent privacy verification (scope: tests only; fix a leak only at its source and with the smallest change). Precondition: A and B are merged on your branch. Act as a red-team reviewer who assumes the implementers made mistakes.
 
-1. Edit `src/shared/components/layout/Navbar.tsx`:
-   - Props become `{ variant?: "public" | "dashboard"; onMenuClick?: () => void }`,
-     default `variant = "dashboard"`. Add a doc comment describing both variants and why the
-     default is "dashboard" (existing tests render <Navbar /> bare and assert no group-sessions link).
-   - Add `const [publicMenuOpen, setPublicMenuOpen] = useState(false)`.
-   - Hamburger button:
-       * change its visibility class from `md:hidden` to `lg:hidden` (it must align with Sidebar's
-         `lg:block` so there is no 768–1023px dead zone);
-       * `variant === "public"`: always rendered, onClick -> `setPublicMenuOpen(true)`;
-       * `variant === "dashboard"`: rendered only when `onMenuClick` is provided; onClick -> onMenuClick.
-       * add `aria-haspopup="dialog"` and `aria-expanded={publicMenuOpen}` only in the public variant.
-   - In the left/start cluster after the logo link, when `variant === "public"` render
-     `<PublicNavLinks />` (give it `ms-4` via a wrapper or className so spacing is logical).
-   - Next to `<CommandPalette />` render `<PublicNavSheet open={publicMenuOpen} onOpenChange={setPublicMenuOpen} />`
-     only when `variant === "public"`.
-   - Do not change anything else (search button, ModeToggle, bell, user dropdown, auth links).
-   - Check layout at 320px and 360px widths mentally/with a quick Playwright or devtools check if
-     available: guest header (hamburger, logo, search, theme, login, signup) must not overflow
-     horizontally. If it does, hide ONLY the header "login" NavLink below `sm` when
-     `variant === "public"` (the Sheet contains it) and note this in your report.
+1. tests/users/test_phone_privacy.py — canary leak test.
+   - Build a realistic world with the existing factories: an APPROVED teacher T1 and a second teacher T2, students S1 and S2, and a staff user. Give EVERY user a different, distinctive phone number. For each number build needles: canonical ('+989121234567'), local ('09121234567') and bare ('9121234567').
+   - Create data that links people: a booking S1<->T1 taken through accept, the resulting session, a group session with S1 and S2 enrolled, a published review, a payment, notifications and sent emails (Celery is eager in the test settings).
+   - For each actor (anonymous, S1, S2, T1, T2) call every list/detail GET endpoint reachable for that actor (discover them from the URLconfs of teachers, bookings, sessions, group sessions, reviews, payments, notifications, contact, content) and assert that no needle belonging to ANOTHER user appears anywhere in response.content.decode(). Parametrize so a failure names the actor and the URL.
+   - Assert an actor sees their OWN phone only at /api/accounts/me/, and that staff sees phones only on /api/admin/ endpoints.
+   - Assert no needle appears in mail.outbox subjects/bodies/HTML alternatives, in Notification payloads, or in captured log records (caplog) produced during these flows and during PATCH /api/accounts/me/.
+   - Assert GET /api/teachers/?search=<phone digits> returns no teacher (phone is not publicly searchable).
+2. tests/common/test_phone_serializer_allowlist.py — architectural guard.
+   - Import every apps.*.serializers module, walk all subclasses of rest_framework.serializers.BaseSerializer recursively, and read the declared and model-derived fields (instantiate defensively; skip classes that need required context, but report how many were skipped).
+   - Fail if any serializer outside ALLOWLIST = {UserMeSerializer, AdminUserSerializer, AdminTeacherVerificationSerializer} has a field named phone_number or teacher_phone_number, or a field whose source contains 'phone_number'. The failure message must explain how to extend the allowlist deliberately.
+   - Fail if any ModelSerializer for User, StudentProfile or TeacherProfile uses Meta.fields == '__all__' or Meta.exclude.
+3. Report a short matrix (actor x endpoint group -> leak found yes/no), the number of endpoints actually exercised, and any endpoint you could not exercise and why.
 
-2. Edit `AppLayout.tsx`: `<Navbar variant="public" />`.
-3. Edit `DashboardLayout.tsx`: `<Navbar variant="dashboard" onMenuClick={() => setSidebarOpen(true)} />`.
-
-4. Search for any other `<Navbar` usages (`grep -rn "<Navbar" src`) — AdminLayout may have its own
-   header; only touch usages that clearly belong to the public/dashboard shells, and list what you found.
-
-Acceptance: the three existing "does not render a Group Sessions link" tests and the Admin-link
-tests pass unchanged. All quality gates pass. Provide a short manual test script (guest on `/`,
-teacher on `/`, student on `/`, dashboard at 800px and 1100px widths).
+Checks: pytest --no-cov -p no:cacheprovider tests/users tests/common; the full suite; make lint.
 ```
 
-### T4: تست‌ها
+### Prompt D — Frontend
 
-```
-TASK T4 — tests (can start once the contracts in T1–T3 are fixed)
+```text
+TASK D — Frontend (scope: hirbad-frontend only). The API contract above is fixed; you may work in parallel with the backend by relying on the MSW mocks and fixtures under src/test/mocks.
 
-Use `@/test/utils` helpers (`render`, `renderAsTeacher`, `renderAsStudent`, `renderWithAuth`) and
-`userEvent`. jsdom does not evaluate Tailwind breakpoints, so responsive-hidden elements are still in
-the DOM: scope queries with `within(...)` and role/name to avoid ambiguity (the desktop
-`PublicNavLinks` and the Sheet render the same link names).
+Read first: src/features/profile/** (types, api, hooks, ProfileForm.tsx, ProfilePage.tsx), src/features/teachers/{types,components/TeacherCard.tsx,pages/TeacherPublicProfilePage.tsx}, src/features/admin/{types/admin.types.ts,pages/AdminUsersPage.tsx,pages/AdminTeacherVerificationDetailPage.tsx}, src/shared/lib/{validators,money,rating,form-errors}.ts, src/shared/i18n/locales/fa/{profile,teachers,admin}.json, src/test/mocks/**, scripts/check-rtl-classes.mjs and scripts/check-no-hardcoded-colors.mjs.
 
-A. Extend `layout/__tests__/Navbar.test.tsx` (KEEP all existing tests unchanged; add a new
-   `describe("public variant")` and `describe("dashboard variant")`):
-   public variant
-   - guest: clicking button named "باز کردن منوی ناوبری" opens a `dialog`; inside it (within) the links
-     معلم‌ها, کلاس‌های گروهی, مقالات, درباره ما, سوالات متداول, تماس با ما, ورود, ثبت‌نام رایگان exist with
-     correct hrefs.
-   - teacher: dialog has NO "کلاس‌های گروهی" link, has "رفتن به داشبورد" (href /dashboard), no ورود/ثبت‌نام رایگان.
-   - student: dialog HAS "کلاس‌های گروهی" and "رفتن به داشبورد".
-   - clicking a link inside the dialog closes it.
-   - the desktop nav (`navigation` named "ناوبری اصلی", outside the dialog) lists exactly 3 primary
-     items for a guest and 2 for a teacher.
-   dashboard variant
-   - `<Navbar variant="dashboard" onMenuClick={fn} />`: click calls fn once and no dialog opens.
-   - `<Navbar variant="dashboard" />` (no handler): the hamburger button is not rendered.
-   - default `<Navbar />` renders no "ناوبری اصلی" navigation landmark.
+1. src/shared/lib/phone.ts: a client-side mirror of the backend rules (accept Persian/Arabic digits and spaces/dashes; Iranian mobile in 09…, 9…, 98…, +98… and 0098… forms; otherwise '+' followed by 8-15 digits), exporting normalizePhone, isValidPhone and formatPhoneForDisplay ('+989121234567' -> '0912 123 4567'; other numbers unchanged). Unit-test it table-driven. The server stays the authority; the client only gives early feedback. Do not hardcode English messages (validators.ts does, but new code must use i18n through t(), like ProfileForm does).
+2. Types: UserProfile gets 'phone_number: string'; UserProfileDetails and UpdateProfileFields get 'teaching_experience_years?: number | null'; UpdateProfilePayload gets 'phone_number?: string'; TeacherProfile and TeacherSummary get 'teaching_experience_years: number | null'; AdminUser gets 'phone_number: string'; the admin verification type gets 'teacher_phone_number: string'. Do NOT add phone to AuthUser, the login/JWT state, localStorage, or any non-admin type.
+3. ProfileForm.tsx: for ALL roles add a phone field (Input with dir='ltr', inputMode='tel', autoComplete='tel', placeholder '09xxxxxxxxx', optional) with a Persian helper text saying it is visible only to site administrators. Teachers additionally get a 'teaching experience (years)' number input (0-60, integer, empty -> null). Send phone_number at the top level of the PATCH payload and teaching_experience_years inside 'profile'. Show the stored phone through formatPhoneForDisplay when the form resets. Make sure server errors with code 'invalid_phone_number' land on the right field through mapApiErrorsToForm. Keep all existing behaviour (full_name, bio, learning_goals, hourly_rate, currency) intact.
+4. Public display of experience: TeacherPublicProfilePage shows it next to the rating/session stats when not null (e.g. '10 سال سابقه تدریس'; reuse the digit-formatting helper the page already uses; 0 -> 'کمتر از یک سال') and hides it when null. TeacherCard shows a compact line only when not null, without layout shift in the grid.
+5. Admin: AdminUsersPage gets a phone column (dir='ltr', '—' when empty); the verification detail page shows the teacher's phone under the email. The phone must not be rendered in any other component.
+6. i18n: add Persian keys only in fa/profile.json, fa/teachers.json and fa/admin.json, following the existing key style. RTL: logical Tailwind classes only. Never pass form values (the phone) to shared/lib/analytics.ts or logger calls.
+7. Tests (vitest + Testing Library): phone.ts; ProfileForm (phone shown for both roles, experience only for teachers, invalid phone blocks submit, payload shape, server-error mapping); TeacherPublicProfilePage shows/hides experience; AdminUsersPage shows the phone. Update fixtures and MSW handlers (teacher.fixtures.ts, admin fixtures, auth fixtures if the /me shape is mocked) so existing tests keep passing.
 
-B. `layout/__tests__/PublicNavSheet.test.tsx`: controlled `open` prop; role filtering; guest vs
-   authenticated footer; every link calls `onOpenChange(false)`; dialog has an accessible name
-   ("منوی هیربَد") and no console.error from Radix about missing Title/Description (spy on console.error).
-
-C. `layout/__tests__/PublicNavLinks.test.tsx`: renders 3/2 items by role; active link gets the active
-   classes when routed to `/teachers` (use MemoryRouter initialEntries via the util's options if supported).
-
-D. In `src/test/integration/app-shell.smoke.test.tsx`: add a scenario that mounts the real AppLayout route
-   at `/` (follow the file's existing pattern), clicks the hamburger, and asserts the dialog appears
-   and that navigating via "معلم‌ها" lands on the teachers page and closes the menu. This is the
-   regression test for the original bug (dead hamburger on the landing page).
-
-Acceptance: new tests fail if you revert the AppLayout change (verify by temporarily removing
-`variant="public"` locally, confirm red, then restore). All gates green.
+Checks: npm run typecheck && npm run lint && npm run check:rtl && npm run lint:colors && npm test.
 ```
 
-### T5: بازبینی مستقل (read-only)
+### Prompt E — Final audit
 
-```
-TASK T5 — independent review (do NOT edit files; output a report)
+```text
+TASK E — Final audit (read-mostly). Precondition: A-D are merged into one integration branch. Review the complete diff (git diff main...HEAD) with fresh eyes and assume something was missed.
 
-Review the diff of the public-nav change in hirbad-frontend. Check and report PASS/FAIL with evidence
-(file:line) for each:
-1. Bug fixed: AppLayout's Navbar hamburger opens PublicNavSheet; no code path leaves a visible,
-   inert hamburger (public always wired; dashboard hidden without handler).
-2. Breakpoint consistency: hamburger `lg:hidden`, PublicNavLinks `lg:flex`, Sidebar `lg:block` —
-   no width range with zero navigation in either shell.
-3. Role rule: "group sessions" is never shown to TEACHER in desktop nav or Sheet; single source in publicNav.ts.
-4. Existing Navbar tests unchanged and passing; default Navbar variant is "dashboard".
-5. RTL: no physical left/right utilities introduced; Sheet side derived from `dir`.
-6. No hardcoded colors; no inline Persian strings outside common.json; all new keys exist.
-7. A11y: nav landmarks have distinct/unique labels per context, Sheet has title+description,
-   hamburger has aria-label (+aria-expanded in public), focus returns to the hamburger on close,
-   links are keyboard reachable, Esc closes.
-8. No edits to forbidden files (ui/**, CommandPalette, Footer, Sidebar, backend).
-9. Run all four quality gates and paste the summaries.
-List any residual risks (e.g., 320px header crowding) and suggest follow-ups, without implementing them.
+1. Privacy: run grep -rniE 'phone' across hirbad-backend/apps and hirbad-frontend/src (excluding tests, i18n and node_modules) and justify every hit against the allowed surfaces: UserMeSerializer, AdminUserSerializer, AdminTeacherVerificationSerializer, Django admin, ProfileForm, and the two admin pages. Anything else is a defect.
+2. Run the canary and allowlist tests, the full backend suite, make lint, python manage.py makemigrations --check --dry-run, the OpenAPI generation if present, and the full frontend check set.
+3. Migration safety: confirm 0009 is additive, reversible (apply then unapply on a scratch Postgres if available; otherwise state that it was not tested) and touches no existing data.
+4. Contract: compare real responses of the endpoints in the contract with the TypeScript types, field by field.
+5. Edge cases to probe (manually or by test): PATCH phone to '' and then to a Persian-digit number; two users with the same number; a teacher with null experience in list and detail; a student sending 'profile.teaching_experience_years'; a staff user without a profile calling /api/accounts/me/.
+6. Docs: add the new fields wherever API fields are documented (backend README/docs) and add 3-4 manual checks to the existing smoke-test checklists (backend docs and frontend docs).
+7. Report: PASS/FAIL per item, defects found (fix only trivial ones such as lint), residual risks, and the decisions that still belong to the owner: privacy-policy text, whether to hide the teacher 'email' on the public endpoint, landline support, phone at registration.
 ```
